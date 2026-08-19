@@ -1,0 +1,33 @@
+-- ====================================================================
+-- jqp — 0004_openreply_schema.sql
+--
+-- SUPERSEDED. This migration originally created an isolated `openreply`
+-- Postgres schema for the vendored OpenReply app. That approach was
+-- tried against real infrastructure and reverted: Prisma's query
+-- ENGINE (not just its CLI) hardcodes `public.` on every generated
+-- query unless the target schema is declared inside
+-- vendor/openreply/prisma/schema.prisma itself via Prisma's
+-- multiSchema feature (a `schemas = [...]` datasource config plus
+-- `@@schema()` on every model) — which would mean editing vendored
+-- code. A connection-string-level fix (`?schema=`, or even the
+-- Postgres-standard `options=-c search_path=...`) only affects the
+-- Prisma CLI's migration engine, not its runtime query generation, so
+-- neither actually worked; real error hit during testing:
+-- "The table `public.User` does not exist in the current database."
+--
+-- The actual fix: OpenReply's tables live in the SAME `public` schema
+-- as our own (see scripts/sync-openreply-env.ts and
+-- packages/publisher/src/openreply-bridge.ts). This is safe because
+-- there are zero table-name collisions — our tables are all
+-- snake_case (posts, campaigns, ig_accounts, post_media,
+-- webhook_events, comment_events, dm_logs), OpenReply's are all
+-- PascalCase Prisma model names (User, Automation, InstagramAccount,
+-- WebhookEvent, DmLog, ...). Verified directly against the real
+-- database, not assumed.
+--
+-- This migration is now a no-op (drops the schema if some earlier run
+-- created it) so re-running the full migration set stays consistent
+-- with the current architecture.
+-- ====================================================================
+
+drop schema if exists openreply cascade;

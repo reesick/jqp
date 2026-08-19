@@ -1,0 +1,25 @@
+{
+  "name": "@jqp/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./bootstrap": "./dist/bootstrap.js",
+    "./edge-safe": "./dist/edge-safe.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.1",
+    "postgres": "^3.4.5",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

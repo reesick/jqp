@@ -1,0 +1,101 @@
+# Render Blueprint — two independent background workers from one repo.
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo.
+# Both services need their env vars set in the Render dashboard
+# (marked sync: false below) — see docs/DEPLOY.md for the full list
+# and where each value comes from.
+
+services:
+  # Ours — the Instagram publishing pipeline (Module 2). Uses Docker
+  # because sharp (image processing) ships a native binary; Docker
+  # guarantees it matches Render's runtime platform.
+  - type: worker
+    name: jqp-worker
+    runtime: docker
+    rootDir: .
+    dockerfilePath: apps/worker/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_BASE_URL
+        sync: false
+      - key: DASHBOARD_SHARED_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: instagram-media
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_GRAPH_VERSION
+        value: v25.0
+      - key: META_API_BASE
+        value: https://graph.instagram.com
+      - key: META_IG_USER_ID
+        sync: false
+      - key: META_LONG_LIVED_ACCESS_TOKEN
+        sync: false
+      - key: META_OAUTH_REDIRECT_URI
+        sync: false
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: BRIDGE_SHARED_SECRET
+        sync: false
+      - key: OPENREPLY_DASHBOARD_URL
+        sync: false
+      - key: QUEUE_CONCURRENCY
+        value: "5"
+      - key: WORKER_HEALTH_PORT
+        value: "8080"
+      - key: MOCK_META
+        value: "false"
+
+  # Theirs — OpenReply's own send worker (vendor/openreply/worker/dm-worker.ts),
+  # deployed unmodified. Plain Node runtime, matching how their own docs
+  # deploy it to Railway (docs/setup.md, Step 1) — Render's equivalent
+  # needs no Docker since there's no native binary in this one.
+  - type: worker
+    name: openreply-worker
+    runtime: node
+    rootDir: vendor/openreply
+    buildCommand: npm install && npm run db:generate
+    startCommand: npm run worker
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: META_GRAPH_API_VERSION
+        value: v25.0
+      - key: INSTAGRAM_APP_ID
+        sync: false
+      - key: INSTAGRAM_APP_SECRET
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
+      - key: WEBHOOK_VERIFY_TOKEN
+        sync: false

@@ -1,0 +1,25 @@
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+!.env.example
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+coverage/
+.vercel/
+posts/**/*.jpg
+posts/**/*.jpeg
+posts/**/*.png
+!posts/POST_001/**
+.turbo/
+
+# Local ingest source folders (real product content dropped at repo
+# root for testing, not application code — already uploaded to
+# Supabase storage once ingested, no need to keep a local git copy).
+/combined-gptimage2-high-01to10/

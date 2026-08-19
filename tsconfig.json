@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@jqp/core": ["packages/core/src/index.ts"],
+      "@jqp/meta": ["packages/meta/src/index.ts"],
+      "@jqp/storage": ["packages/storage/src/index.ts"],
+      "@jqp/queue": ["packages/queue/src/index.ts"],
+      "@jqp/publisher": ["packages/publisher/src/index.ts"]
+    }
+  },
+  "include": ["scripts", "packages/*/src"],
+  "exclude": ["node_modules", "**/dist", "apps"]
+}
