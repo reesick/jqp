@@ -18,11 +18,12 @@ loadRootDotenv();
 // applying SQL against Postgres, so it shouldn't be blocked by unrelated
 // Meta/OpenReply config you haven't filled in yet. Just the one var it
 // actually needs.
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
+const rawDatabaseUrl = process.env.DATABASE_URL;
+if (!rawDatabaseUrl) {
   console.error("DATABASE_URL is not set in .env. Copy .env.example to .env and fill in your Supabase connection string first.");
   process.exit(1);
 }
+const databaseUrl: string = rawDatabaseUrl;
 
 const migrationsDir = resolve(process.cwd(), "supabase/migrations");
 const files = readdirSync(migrationsDir)
