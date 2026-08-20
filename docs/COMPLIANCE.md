@@ -36,11 +36,17 @@ Step 3 is worth understanding as a compliance property, not just a UX choice: th
 | `messages` | Optional | Only needed for OpenReply's Inbox and its DM-keyword trigger, neither of which we use |
 | `messaging_seen` | **Deliberately off** | OpenReply has a fallback that sends the link to anyone who *reads* the opening DM without tapping (`app/api/webhook/route.ts`). Leaving this unsubscribed keeps that dormant, so the link only ever goes out on an explicit tap. This is a deliberate compliance choice — do not enable it casually |
 
-Verify what is actually subscribed with the API, not the console UI — the console has shown "Subscribed" while the API returned an empty array:
+Verify what is actually subscribed with the API, not the console UI — the console has shown "Subscribed" when it wasn't. Use the **account-level** endpoint:
 
 ```bash
-curl -s "https://graph.facebook.com/v26.0/{app-id}/subscriptions?access_token={app-id}|{app-secret}"
+curl -s "https://graph.instagram.com/v26.0/${META_IG_USER_ID}/subscribed_apps?access_token=${META_LONG_LIVED_ACCESS_TOKEN}"
 ```
+
+```json
+{"data":[{"id":"...","subscribed_fields":["comments","messages","messaging_postbacks"]}]}
+```
+
+Do **not** use `GET /v26.0/{app-id}/subscriptions` with an app token to check this. Because we authenticate through Instagram Login, the app-level subscription lives under the Instagram app rather than the Facebook app, and that endpoint returns `{"data":[]}` against the Facebook app ID even when webhooks are working perfectly. It looks like a broken subscription and isn't one.
 
 ## Permissions requested
 
