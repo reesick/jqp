@@ -95,6 +95,16 @@ export interface CampaignRow {
   destination_url: string | null;
   public_reply_enabled: boolean;
   public_reply_message: string | null;
+  /**
+   * Two-step reveal: when enabled, the commenter first gets `opening_dm_message`
+   * with a button labelled `opening_dm_button_label`, and `dm_message` (the one
+   * carrying the link) is only sent after they tap it. Maps to OpenReply's
+   * Automation.openingDm* columns. All three must be set for the flow to engage —
+   * OpenReply's dm-worker gates on all three being truthy.
+   */
+  opening_dm_enabled: boolean;
+  opening_dm_message: string | null;
+  opening_dm_button_label: string | null;
   enabled: boolean;
   sync_status: CampaignSyncStatus;
   sync_error: string | null;

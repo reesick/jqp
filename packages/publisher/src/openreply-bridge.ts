@@ -102,6 +102,24 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
     // empty keywords here means "match any word", not "match nothing".
     const matchAnyWord = campaign.trigger_keywords.length === 0;
 
+    // Two-step reveal. OpenReply's dm-worker (processComment, `useOpeningDm`)
+    // engages the button flow only when all three of these are truthy, so an
+    // enabled campaign missing either text field must fall back to the plain
+    // one-shot DM rather than half-engage. Meta's own caps are applied here
+    // rather than trusted from the form: their client truncates button text at
+    // 640 and the title at 20, silently, so anything longer would be cut
+    // mid-word at send time with no record of it.
+    const openingDmReady = Boolean(campaign.opening_dm_enabled && campaign.opening_dm_message && campaign.opening_dm_button_label);
+    const openingDmEnabled = openingDmReady;
+    const openingDmMessage = openingDmReady ? campaign.opening_dm_message!.slice(0, 640) : null;
+    const openingDmButtonLabel = openingDmReady ? campaign.opening_dm_button_label!.slice(0, 20) : null;
+    if (campaign.opening_dm_enabled && !openingDmReady) {
+      log.warn("opening_dm_incomplete_falling_back_to_single_dm", {
+        hasMessage: Boolean(campaign.opening_dm_message),
+        hasButtonLabel: Boolean(campaign.opening_dm_button_label)
+      });
+    }
+
     if (campaign.openreply_automation_id) {
       await sql`
         update "Automation" set
@@ -113,6 +131,9 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
           "publicReplyEnabled" = ${campaign.public_reply_enabled},
           "publicReplyMessage" = ${campaign.public_reply_message ?? null},
           "publicReplyMessages" = ${publicReplyMessages},
+          "openingDmEnabled" = ${openingDmEnabled},
+          "openingDmMessage" = ${openingDmMessage},
+          "openingDmButtonLabel" = ${openingDmButtonLabel},
           "isActive" = ${campaign.enabled},
           "updatedAt" = ${now}
         where "id" = ${campaign.openreply_automation_id}
@@ -133,11 +154,13 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
         "id", "workspaceId", "instagramAccountId", "name", "postId",
         "keywords", "matchAnyWord", "matchAnyPost", "pendingNextReel", "wholeWordMatch",
         "dmMessage", "dmTriggerEnabled", "publicReplyEnabled", "publicReplyMessage", "publicReplyMessages",
+        "openingDmEnabled", "openingDmMessage", "openingDmButtonLabel",
         "isActive", "createdAt", "updatedAt"
       ) values (
         ${automationId}, ${account.workspaceId}, ${account.id}, ${`jqp: ${post.campaign_id}`}, ${post.instagram_media_id},
         ${campaign.trigger_keywords}, ${matchAnyWord}, false, false, ${wholeWordMatch},
         ${campaign.dm_message}, false, ${campaign.public_reply_enabled}, ${campaign.public_reply_message ?? null}, ${publicReplyMessages},
+        ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel},
         ${campaign.enabled}, ${now}, ${now}
       )
     `;

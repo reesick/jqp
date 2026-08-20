@@ -239,15 +239,26 @@ export interface UpsertCampaignParams {
   destinationUrl?: string | null;
   publicReplyEnabled: boolean;
   publicReplyMessage?: string | null;
+  openingDmEnabled?: boolean;
+  openingDmMessage?: string | null;
+  openingDmButtonLabel?: string | null;
   enabled: boolean;
 }
 
 /** Creates or updates the staged campaign for a post (one campaign per post — plan section 21). Does NOT touch OpenReply; that only happens via the sync-campaign-to-openreply job (T12). */
 export async function upsertCampaign(params: UpsertCampaignParams): Promise<CampaignRow> {
   const sql = getDb();
+  // Opening-DM text fields are normalised to NULL when the toggle is off, not
+  // left as empty strings — OpenReply's dm-worker gates the two-step flow on all
+  // three columns being truthy, so a stray "" would read the same as NULL there
+  // but differ in our own UI round-trip. Same normalisation their own builder does.
+  const openingDmEnabled = params.openingDmEnabled ?? false;
+  const openingDmMessage = openingDmEnabled ? params.openingDmMessage || null : null;
+  const openingDmButtonLabel = openingDmEnabled ? params.openingDmButtonLabel || null : null;
+
   const rows = await sql<CampaignRow[]>`
-    insert into campaigns (post_id, trigger_keywords, match_mode, dm_message, destination_url, public_reply_enabled, public_reply_message, enabled)
-    values (${params.postId}, ${params.triggerKeywords}, ${params.matchMode}, ${params.dmMessage}, ${params.destinationUrl ?? null}, ${params.publicReplyEnabled}, ${params.publicReplyMessage ?? null}, ${params.enabled})
+    insert into campaigns (post_id, trigger_keywords, match_mode, dm_message, destination_url, public_reply_enabled, public_reply_message, opening_dm_enabled, opening_dm_message, opening_dm_button_label, enabled)
+    values (${params.postId}, ${params.triggerKeywords}, ${params.matchMode}, ${params.dmMessage}, ${params.destinationUrl ?? null}, ${params.publicReplyEnabled}, ${params.publicReplyMessage ?? null}, ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel}, ${params.enabled})
     on conflict (post_id) do update set
       trigger_keywords = excluded.trigger_keywords,
       match_mode = excluded.match_mode,
@@ -255,6 +266,9 @@ export async function upsertCampaign(params: UpsertCampaignParams): Promise<Camp
       destination_url = excluded.destination_url,
       public_reply_enabled = excluded.public_reply_enabled,
       public_reply_message = excluded.public_reply_message,
+      opening_dm_enabled = excluded.opening_dm_enabled,
+      opening_dm_message = excluded.opening_dm_message,
+      opening_dm_button_label = excluded.opening_dm_button_label,
       enabled = excluded.enabled
     returning *
   `;

@@ -17,8 +17,29 @@ interface Props {
     destination_url: string | null;
     public_reply_enabled: boolean;
     public_reply_message: string | null;
+    opening_dm_enabled: boolean;
+    opening_dm_message: string | null;
+    opening_dm_button_label: string | null;
     enabled: boolean;
   };
+}
+
+// Meta's hard caps for a button-template message. OpenReply's client truncates
+// to exactly these at send time (text.slice(0, 640), title.slice(0, 20)), so
+// anything longer is silently cut mid-word — enforce them at the input instead.
+const OPENING_DM_MAX = 640;
+const BUTTON_LABEL_MAX = 20;
+
+const DEFAULT_OPENING_DM =
+  "Hey {username}! 👋 This is an automated reply — tap below and I'll send your link.";
+
+// Meta requires automated chat experiences to disclose they're automated at the
+// start of a conversation. The opening DM is that start, so this warns (never
+// blocks — the operator owns their own copy) when no disclosure phrase is present.
+const DISCLOSURE_HINTS = ["automated", "auto-reply", "auto reply", "bot", "automation"];
+function looksUndisclosed(message: string): boolean {
+  const lower = message.toLowerCase();
+  return message.trim().length > 0 && !DISCLOSURE_HINTS.some((hint) => lower.includes(hint));
 }
 
 export function CampaignForm({ posts, defaultPostId, existing }: Props) {
@@ -30,6 +51,9 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
   const [destinationUrl, setDestinationUrl] = useState(existing?.destination_url ?? "");
   const [publicReplyEnabled, setPublicReplyEnabled] = useState(existing?.public_reply_enabled ?? false);
   const [publicReplyMessage, setPublicReplyMessage] = useState(existing?.public_reply_message ?? "");
+  const [openingDmEnabled, setOpeningDmEnabled] = useState(existing?.opening_dm_enabled ?? false);
+  const [openingDmMessage, setOpeningDmMessage] = useState(existing?.opening_dm_message ?? DEFAULT_OPENING_DM);
+  const [openingDmButtonLabel, setOpeningDmButtonLabel] = useState(existing?.opening_dm_button_label ?? "Send the link");
   const [enabled, setEnabled] = useState(existing?.enabled ?? false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +74,9 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
           destinationUrl,
           publicReplyEnabled,
           publicReplyMessage,
+          openingDmEnabled,
+          openingDmMessage,
+          openingDmButtonLabel,
           enabled
         })
       });
@@ -94,8 +121,56 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
         </select>
       </label>
 
+      <Toggle
+        id="opening-dm-toggle"
+        checked={openingDmEnabled}
+        onChange={setOpeningDmEnabled}
+        label="Send an opening DM with a button first"
+      />
+      {openingDmEnabled ? (
+        <>
+          <p className="muted u-text-sm">
+            They get this message with a tappable button. The DM below — the one with your link — is only sent
+            after they tap it.
+          </p>
+          <label>
+            Opening DM message
+            <span className="hint">
+              {"{username}"} inserts their name. {openingDmMessage.length}/{OPENING_DM_MAX}
+            </span>
+            <textarea
+              value={openingDmMessage}
+              onChange={(e) => setOpeningDmMessage(e.target.value)}
+              maxLength={OPENING_DM_MAX}
+              rows={3}
+              required
+            />
+          </label>
+          {looksUndisclosed(openingDmMessage) ? (
+            <p className="muted u-text-sm">
+              Heads up: Meta requires automated chat experiences to say they&rsquo;re automated at the start of a
+              conversation. Consider mentioning it here.
+            </p>
+          ) : null}
+          <label>
+            Button label
+            <span className="hint">
+              {openingDmButtonLabel.length}/{BUTTON_LABEL_MAX} — Instagram cuts anything longer.
+            </span>
+            <input
+              type="text"
+              value={openingDmButtonLabel}
+              onChange={(e) => setOpeningDmButtonLabel(e.target.value)}
+              maxLength={BUTTON_LABEL_MAX}
+              placeholder="Send the link"
+              required
+            />
+          </label>
+        </>
+      ) : null}
+
       <label>
-        DM message
+        {openingDmEnabled ? "DM message (sent after they tap)" : "DM message"}
         <textarea value={dmMessage} onChange={(e) => setDmMessage(e.target.value)} rows={3} required />
       </label>
 

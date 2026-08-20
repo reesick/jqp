@@ -66,6 +66,9 @@ function baseCampaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
     destination_url: null,
     public_reply_enabled: false,
     public_reply_message: null,
+    opening_dm_enabled: false,
+    opening_dm_message: null,
+    opening_dm_button_label: null,
     enabled: true,
     sync_status: "DM_SYNC_PENDING",
     sync_error: null,
@@ -130,6 +133,79 @@ describe("syncCampaignToOpenReply — matchAnyWord correctness", () => {
     // update "Automation" set "postId" = ?, "keywords" = ?, "matchAnyWord" = ?, ...
     const matchAnyWordValue = updateCall!.values[2];
     expect(matchAnyWordValue).toBe(true);
+  });
+});
+
+describe("syncCampaignToOpenReply — opening DM (two-step button reveal)", () => {
+  const openingDm = {
+    opening_dm_enabled: true,
+    opening_dm_message: "Tap below for the link",
+    opening_dm_button_label: "Send the link"
+  };
+
+  it("pushes all three opening-DM columns when fully configured", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign(openingDm));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
+    expect(insertCall!.text).toContain("openingDmEnabled");
+    expect(insertCall!.values).toContain(true);
+    expect(insertCall!.values).toContain("Tap below for the link");
+    expect(insertCall!.values).toContain("Send the link");
+  });
+
+  it("falls back to the single-DM flow when enabled but the button label is missing", async () => {
+    // OpenReply's dm-worker gates on all three being truthy, so a half-configured
+    // campaign must write enabled:false rather than half-engage the button flow.
+    repo.getCampaign.mockResolvedValue(baseCampaign({ ...openingDm, opening_dm_button_label: null }));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
+    expect(insertCall!.values).not.toContain("Tap below for the link");
+  });
+
+  it("truncates to Meta's button-template caps rather than letting the API silently cut them", async () => {
+    repo.getCampaign.mockResolvedValue(
+      baseCampaign({
+        opening_dm_enabled: true,
+        opening_dm_message: "x".repeat(700),
+        opening_dm_button_label: "y".repeat(40)
+      })
+    );
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
+    expect(insertCall!.values).toContain("x".repeat(640));
+    expect(insertCall!.values).toContain("y".repeat(20));
+  });
+
+  it("also writes the opening-DM columns on the UPDATE path (re-sync)", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign({ ...openingDm, openreply_automation_id: "existing_automation_1" }));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const updateCall = sqlCalls.find((c) => c.text.includes("update"));
+    expect(updateCall!.text).toContain("openingDmButtonLabel");
+    expect(updateCall!.values).toContain("Send the link");
+  });
+
+  it("clears the opening-DM columns when the toggle is turned back off", async () => {
+    repo.getCampaign.mockResolvedValue(
+      baseCampaign({ opening_dm_enabled: false, opening_dm_message: "stale", opening_dm_button_label: "stale" })
+    );
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
+    expect(insertCall!.values).not.toContain("stale");
   });
 });
 

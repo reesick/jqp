@@ -22,6 +22,9 @@ interface UpsertBody {
   destinationUrl?: string;
   publicReplyEnabled?: boolean;
   publicReplyMessage?: string;
+  openingDmEnabled?: boolean;
+  openingDmMessage?: string;
+  openingDmButtonLabel?: string;
   enabled?: boolean;
 }
 
@@ -40,6 +43,16 @@ export async function POST(request: NextRequest) {
       .map((k) => k.trim())
       .filter(Boolean);
 
+    // The two-step flow needs both the message and the button label; enabling it
+    // with either missing would silently fall back to a one-shot DM at send time,
+    // which is confusing to debug from the dashboard. Reject it here instead.
+    if (body.openingDmEnabled && (!body.openingDmMessage?.trim() || !body.openingDmButtonLabel?.trim())) {
+      return NextResponse.json(
+        { success: false, error: "An opening DM needs both a message and a button label." },
+        { status: 400 }
+      );
+    }
+
     const campaign = await upsertCampaign({
       postId: body.postId,
       triggerKeywords: keywords,
@@ -48,6 +61,9 @@ export async function POST(request: NextRequest) {
       destinationUrl: body.destinationUrl || null,
       publicReplyEnabled: Boolean(body.publicReplyEnabled),
       publicReplyMessage: body.publicReplyMessage || null,
+      openingDmEnabled: Boolean(body.openingDmEnabled),
+      openingDmMessage: body.openingDmMessage || null,
+      openingDmButtonLabel: body.openingDmButtonLabel || null,
       enabled: Boolean(body.enabled)
     });
 
