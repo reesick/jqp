@@ -18,7 +18,12 @@ async function main() {
   const log = rootLogger.child({ service: "worker" });
   log.info("worker_starting", { queueConcurrency: env.QUEUE_CONCURRENCY, mockMeta: env.MOCK_META });
 
-  const { setReady } = startHealthServer(env.WORKER_HEALTH_PORT);
+  // Render (and most PaaS) inject the port to bind as PORT and will kill a
+  // service that binds anything else. Prefer it when present so this same
+  // build runs as a Render web service — which matters because free-tier
+  // Render offers web services but not always-on background workers.
+  const healthPort = Number(process.env.PORT) || env.WORKER_HEALTH_PORT;
+  const { setReady } = startHealthServer(healthPort);
 
   registerDbShutdownHooks();
   registerQueueShutdownHooks();

@@ -1,5 +1,21 @@
-# Render Blueprint — two independent background workers from one repo.
-# Deploy: Render dashboard -> New -> Blueprint -> point at this repo.
+# Render services — the two workers, one repo.
+#
+# NOTE: Blueprints (deploying from this file) are a PAID Render feature. On the
+# free plan, create both services by hand in the dashboard instead — this file
+# then serves as the reference for what to enter. See docs/RENDER-FREE.md for
+# the click-by-click version.
+#
+# Declared as `type: web` on `plan: free` rather than `type: worker`, because
+# Render's free plan offers web services but not always-on background workers.
+# Both processes therefore bind $PORT: ours already ran a health server (and now
+# prefers $PORT), OpenReply's gets one via its startCommand below.
+#
+# The tradeoff to know: free web services sleep after ~15 minutes without
+# inbound HTTP, and a sleeping worker processes nothing. Keep them awake with an
+# external pinger (docs/RENDER-FREE.md), and accept that a missed ping means
+# delayed posts and DMs rather than lost ones — jobs stay queued in Postgres and
+# Redis, and drain once the service wakes.
+#
 # Both services need their env vars set in the Render dashboard
 # (marked sync: false below) — see docs/DEPLOY.md for the full list
 # and where each value comes from.
@@ -8,13 +24,13 @@ services:
   # Ours — the Instagram publishing pipeline (Module 2). Uses Docker
   # because sharp (image processing) ships a native binary; Docker
   # guarantees it matches Render's runtime platform.
-  - type: worker
+  - type: web
     name: jqp-worker
     runtime: docker
     rootDir: .
     dockerfilePath: apps/worker/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     envVars:
       - key: NODE_ENV
         value: production
@@ -63,13 +79,21 @@ services:
   # deployed unmodified. Plain Node runtime, matching how their own docs
   # deploy it to Railway (docs/setup.md, Step 1) — Render's equivalent
   # needs no Docker since there's no native binary in this one.
-  - type: worker
+  - type: web
     name: openreply-worker
     runtime: node
     rootDir: vendor/openreply
     buildCommand: npm install && npm run db:generate
-    startCommand: npm run worker
-    plan: starter
+    # OpenReply's dm-worker is a pure BullMQ consumer and binds no port, but a
+    # Render *web* service is killed unless something listens on $PORT. The
+    # inline server below satisfies that without touching vendored code, and
+    # doubles as the endpoint the keep-alive pinger hits.
+    #
+    # Caveat: the port stays bound even if the worker itself dies, so a green
+    # health check here means "the container is alive", not "DMs are sending".
+    # The real signal is OpenReply's own /api/health worker.healthy field.
+    startCommand: node -e "require('http').createServer((_,r)=>{r.writeHead(200);r.end('ok')}).listen(process.env.PORT||10000)" & npm run worker
+    plan: free
     envVars:
       - key: NODE_ENV
         value: production
