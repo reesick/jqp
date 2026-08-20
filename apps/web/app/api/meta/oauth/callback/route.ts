@@ -3,7 +3,7 @@ import { rootLogger } from "@jqp/core";
 import { timingSafeEqualString } from "@jqp/core/edge-safe";
 import { exchangeCodeForToken, exchangeForLongLivedToken, resolveInstagramAccount } from "@jqp/meta";
 import { upsertIgAccount } from "@jqp/publisher";
-import { OAUTH_STATE_COOKIE } from "../start/route";
+import { OAUTH_STATE_COOKIE } from "../../../_lib/oauth-state";
 
 /** Clears the one-shot state cookie on every exit path, success or failure. */
 function redirectClearingState(url: URL) {

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { loadEnv } from "@jqp/core";
-
-export const OAUTH_STATE_COOKIE = "jqp_oauth_state";
+import { OAUTH_STATE_COOKIE } from "../../../_lib/oauth-state";
 
 /**
  * Redirects the operator's browser to Instagram's own consent screen

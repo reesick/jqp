@@ -15,7 +15,15 @@ Do this in order — later steps need URLs/values from earlier ones.
 
 ## 1. Supabase (already done per docs/SETUP.md)
 
-Migrations run automatically on every deploy of our web app (Vercel's `vercel-build` script runs `npm run migrate` before `next build` — see step 2), tracked in a `_migrations_applied` ledger so reruns only apply new files. You can still run `npm run migrate` manually any time to check/apply outside a deploy.
+Run migrations from your machine, not from the deploy:
+
+```bash
+npm run migrate
+```
+
+There is one Supabase project, and local and production both point at it — so running this locally *is* applying it to production. A `_migrations_applied` ledger means reruns only execute new files, so it's safe to run any time.
+
+Deliberately NOT wired into the Vercel build. With one shared database the schema is already current by the time you deploy, so a build-time migration would be redundant, and a workspace-resolution hiccup inside Vercel's build sandbox would fail the whole deploy for no benefit. Run it here, then deploy.
 
 ## 2. Our web app → Vercel
 
