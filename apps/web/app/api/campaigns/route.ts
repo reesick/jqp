@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCampaigns, upsertCampaign, getPost } from "@jqp/publisher";
 import { enqueueSyncCampaign } from "@jqp/queue";
+import { apiError } from "../_lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +10,7 @@ export async function GET() {
     const campaigns = await listCampaigns();
     return NextResponse.json({ success: true, data: campaigns });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: `Database unavailable: ${message}` }, { status: 503 });
+    return apiError("campaigns_list_failed", err, { status: 503, publicMessage: "Database unavailable." });
   }
 }
 
@@ -78,7 +78,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: campaign }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return apiError("campaign_create_failed", err, { publicMessage: "Could not save that campaign." });
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listPosts, ingestPostFolder } from "@jqp/publisher";
+import { apiError } from "../_lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +9,7 @@ export async function GET() {
     const posts = await listPosts();
     return NextResponse.json({ success: true, data: posts });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: `Database unavailable: ${message}` }, { status: 503 });
+    return apiError("posts_list_failed", err, { status: 503, publicMessage: "Database unavailable." });
   }
 }
 
@@ -24,7 +24,10 @@ export async function POST(request: NextRequest) {
     const post = await ingestPostFolder(folderPath);
     return NextResponse.json({ success: true, data: post }, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: message }, { status: 400 });
+    // Ingest errors are usually the operator's own input (bad folder path,
+    // wrong filenames, unreadable image), so the message is genuinely useful
+    // to them — but it can also carry a filesystem path, so it still goes
+    // through the same sanitiser in production.
+    return apiError("post_ingest_failed", err, { status: 400, publicMessage: "Could not ingest that folder." });
   }
 }

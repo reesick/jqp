@@ -57,6 +57,31 @@ export async function uploadPostMedia(params: UploadPostMediaParams): Promise<Up
 }
 
 /**
+ * Deletes media objects from the bucket. Used to purge a post's images once
+ * Instagram has published them and holds its own copy — see the call site in
+ * packages/publisher/src/pipeline.ts.
+ *
+ * The bucket is public and object paths are deterministic
+ * (`{campaignId}/{sequence}-{name}`), so anything left behind stays
+ * world-readable and enumerable indefinitely. Publishing is the point after
+ * which our copy is dead weight, so that's when it goes.
+ *
+ * Returns the number of objects Supabase reported removing. Never throws —
+ * callers treat cleanup as best-effort, because a storage error must not fail
+ * a post Instagram has already accepted.
+ */
+export async function deletePostMedia(storagePaths: string[]): Promise<{ removed: number; error: string | null }> {
+  if (storagePaths.length === 0) return { removed: 0, error: null };
+
+  const env = loadEnv();
+  const client = getSupabaseClient();
+  const { data, error } = await client.storage.from(env.SUPABASE_STORAGE_BUCKET).remove(storagePaths);
+
+  if (error) return { removed: 0, error: error.message };
+  return { removed: data?.length ?? 0, error: null };
+}
+
+/**
  * Signed-URL alternative to the public bucket (plan section 18,
  * "Option B"). Not used by default — see supabase/migrations/0003_storage.sql
  * for why Option A (public bucket) is V1's choice — but kept available

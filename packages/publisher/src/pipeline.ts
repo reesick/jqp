@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { rootLogger, ValidationError, NonRetryableError, type Logger, type PostRow } from "@jqp/core";
-import { uploadPostMedia, preflightMediaUrl } from "@jqp/storage";
+import { uploadPostMedia, preflightMediaUrl, deletePostMedia } from "@jqp/storage";
 import { createChildContainer, createSingleImageContainer, createCarouselContainer, pollContainerUntilReady, publishMedia } from "@jqp/meta";
 import { enqueueSyncCampaign } from "@jqp/queue";
 import { scanPostFolder } from "./scanner.js";
@@ -234,6 +234,22 @@ async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
 
   await updatePostStatus(post.id, { status: "PUBLISHED", instagramMediaId: result.id, publishedAt: new Date() });
   log.info("post_published", { instagramMediaId: result.id });
+
+  // Instagram now holds its own copy, so ours is dead weight sitting in a
+  // public bucket at a guessable path. Purge the bytes but keep the post_media
+  // rows (storage_path / public_url) for audit history.
+  //
+  // Best-effort by design: the post is already live on Instagram at this point,
+  // and no storage failure should turn a successful publish into a failed one.
+  try {
+    const media = await listPostMedia(post.id);
+    const paths = media.map((m) => m.storage_path).filter((p): p is string => Boolean(p));
+    const { removed, error } = await deletePostMedia(paths);
+    if (error) log.warn("post_media_cleanup_failed", { error, pathCount: paths.length });
+    else log.info("post_media_cleaned_up", { removed });
+  } catch (err) {
+    log.warn("post_media_cleanup_failed", { error: err instanceof Error ? err.message : String(err) });
+  }
 
   // Plan section 77 (automatic campaign registration): if the user already
   // staged a campaign for this post and enabled it, kick off the sync now —

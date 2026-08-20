@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaign, upsertCampaign, getPost } from "@jqp/publisher";
 import { enqueueSyncCampaign } from "@jqp/queue";
+import { apiError } from "../../_lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if (!campaign) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true, data: campaign });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: `Database unavailable: ${message}` }, { status: 503 });
+    return apiError("campaign_fetch_failed", err, { status: 503, publicMessage: "Database unavailable.", fields: { campaignId: id } });
   }
 }
 
@@ -68,7 +68,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return apiError("campaign_update_failed", err, { publicMessage: "Could not update that campaign." });
   }
 }

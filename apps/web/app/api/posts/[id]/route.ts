@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPost, listPostMedia } from "@jqp/publisher";
+import { apiError } from "../../_lib/api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const media = await listPostMedia(id);
     return NextResponse.json({ success: true, data: { post, media } });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ success: false, error: `Database unavailable: ${message}` }, { status: 503 });
+    return apiError("post_fetch_failed", err, { status: 503, publicMessage: "Database unavailable.", fields: { postId: id } });
   }
 }
