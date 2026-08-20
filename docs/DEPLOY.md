@@ -13,6 +13,8 @@ Database and storage: your one Supabase project. Our tables and OpenReply's Pris
 
 Do this in order — later steps need URLs/values from earlier ones.
 
+> **Already deployed?** `docs/LIVE.md` has the actual production URLs, the working database connection string, and the build/database gotchas that were hit the first time round. Read that before re-treading this guide.
+
 ## 1. Supabase (already done per docs/SETUP.md)
 
 Run migrations from your machine, not from the deploy:
@@ -31,8 +33,8 @@ Deliberately NOT wired into the Vercel build. With one shared database the schem
 2. **Root Directory**: `apps/web`
 3. Framework preset: Next.js (auto-detected)
 4. Environment variables: every key from `.env.example` except the `MOCK_META*` ones (leave `MOCK_META=false`) — see that file's comments for where each value comes from.
-5. Deploy. Note the assigned domain (`your-app.vercel.app`) — this becomes `APP_BASE_URL` and `META_OAUTH_REDIRECT_URI`'s base. Update those two env vars to the real domain and redeploy.
-6. Update the Meta app's OAuth redirect URI (`docs/SETUP.md` §2 Step 4) to `https://your-app.vercel.app/api/meta/oauth/callback`.
+5. Deploy. Note the assigned domain (`jqp-web-89h2-wheat.vercel.app`) — this becomes `APP_BASE_URL` and `META_OAUTH_REDIRECT_URI`'s base. Update those two env vars to the real domain and redeploy.
+6. Update the Meta app's OAuth redirect URI (`docs/SETUP.md` §2 Step 4) to `https://jqp-web-89h2-wheat.vercel.app/api/meta/oauth/callback`.
 
 ## 3. Our worker → Render
 
@@ -49,13 +51,13 @@ Use the root `render.yaml` (Blueprint):
 2. **Root Directory**: `vendor/openreply`
 3. It ships its own `vercel.json` — no changes needed there.
 4. Environment variables: everything from `vendor/openreply/.env.example`, with production values:
-   - `DATABASE_URL`: the same Supabase connection string as our own app — see the pooler guidance in the root `.env.example` (session-mode only, never the transaction pooler)
+   - `DATABASE_URL`: the **session pooler** string (`aws-0-<region>.pooler.supabase.com:5432`, user `postgres.<project-ref>`), NOT the direct `db.<ref>.supabase.co` host — that one is IPv6-only and unreachable from Vercel. See `docs/LIVE.md`.
    - `REDIS_URL`: Upstash
    - `RESEND_API_KEY`, `EMAIL_FROM`: from `docs/SETUP.md` §4
    - `NEXTAUTH_URL`: this Vercel project's own domain
    - `ENCRYPTION_KEY`, `NEXTAUTH_SECRET`, `CRON_SECRET`: generate fresh ones for production — do NOT reuse the local-dev values from `vendor/openreply/.env`
-5. Deploy — the build runs `prisma generate` then `prisma migrate deploy` automatically (`vercel-build` script in `vendor/openreply/package.json`).
-6. Update the Meta webhook callback URL (`docs/SETUP.md` §2 Step 5) to `https://{this-domain}/api/webhook`.
+5. Deploy — the build runs `prisma generate` then `prisma migrate deploy` automatically (`vercel-build` script in `vendor/openreply/package.json`). If it fails with **P3005 "schema is not empty"**, the database has the tables but no `_prisma_migrations` ledger; baseline it once per `docs/LIVE.md` rather than retrying the deploy.
+6. Update the Meta webhook callback URL (`docs/SETUP.md` §2 Step 5) to `https://jqp-openreply-1.vercel.app/api/webhook`.
 
 ## 5. OpenReply's worker → Render
 
