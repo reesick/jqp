@@ -8,10 +8,16 @@ The actual production URLs and settings for this project, and how to re-verify t
 |---|---|---|---|---|
 | jqp dashboard | https://jqp-web-89h2-wheat.vercel.app | Vercel | `apps/web` | live |
 | OpenReply | https://jqp-openreply-1.vercel.app | Vercel | `vendor/openreply` | live |
-| jqp publish worker | — | Render | `apps/worker` | **not deployed** |
-| OpenReply DM worker | — | Render | `vendor/openreply` | **not deployed** |
+| jqp publish worker | — | **local only** | `apps/worker` | run on demand |
+| OpenReply DM worker | — | Oracle Cloud free VM | `vendor/openreply` | see `docs/ORACLE-WORKER.md` |
 
-Until the two workers exist: the dashboard queues publish jobs that nothing processes, and matched comments never get a DM.
+## Why the publish worker is not deployed anywhere
+
+It **cannot** be. `stepValidate` and `stepUpload` in `packages/publisher/src/pipeline.ts` call `scanPostFolder(post.folder_path)`, and `folder_path` is a path on the operator's own machine (`D:\jqp\...`). Any remote host fails with ENOENT on the first post. Publishing is therefore a local operation by construction — start `apps/worker` when you want to post.
+
+Only the DM worker genuinely needs 24/7 hosting, because a comment can arrive at any time and the reply has to go out inside Meta's messaging window.
+
+Knock-on effect: `sync-campaign-to-openreply` and the retention purge also run in `apps/worker`, so they only fire while the local worker is up. A campaign stuck at `DM_SYNC_PENDING` just means the local worker hasn't run since it was enabled.
 
 ## Database — use the pooler, not the direct host
 
