@@ -11,7 +11,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build:packages": "npm run build -w @jqp/core && npm run build -w @jqp/meta && npm run build -w @jqp/storage && npm run build -w @jqp/queue && npm run build -w @jqp/ai && npm run build -w @jqp/publisher",
+    "build:packages": "npm run build -w @jqp/core && npm run build -w @jqp/meta && npm run build -w @jqp/storage && npm run build -w @jqp/queue && npm run build -w @jqp/publisher",
     "build": "npm run build:packages && npm run build --workspace apps/web && npm run build --workspace apps/worker",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
@@ -27,7 +27,8 @@
     "dev:web": "npm run dev --workspace apps/web",
     "dev:worker": "npm run dev --workspace apps/worker",
     "build:web": "npm run build --workspace apps/web",
-    "build:worker": "npm run build --workspace apps/worker"
+    "build:worker": "npm run build --workspace apps/worker",
+    "build:ai": "npm run build -w @jqp/ai"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
