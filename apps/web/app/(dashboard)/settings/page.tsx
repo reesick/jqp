@@ -1,6 +1,6 @@
-import { listIgAccounts } from "@jqp/publisher";
+import { listIgAccounts, getTokenHealth } from "@jqp/publisher";
 import { loadEnv } from "@jqp/core";
-import { Settings as SettingsIcon, Link2 } from "../../components/icons";
+import { Settings as SettingsIcon, Link2, AlertTriangle } from "../../components/icons";
 import { InstagramGlyph } from "../../components/instagram-glyph";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const metadata = { title: "Settings" };
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ connected?: string; oauth_error?: string }> }) {
   const params = await searchParams;
-  const accounts = await listIgAccounts();
+  const [accounts, tokenHealth] = await Promise.all([listIgAccounts(), getTokenHealth()]);
   const env = loadEnv();
 
   return (
@@ -24,6 +24,31 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       {params.connected ? <div className="card">Connected @{params.connected}.</div> : null}
       {params.oauth_error ? <div className="error-box">Connection failed: {params.oauth_error}</div> : null}
+
+      {tokenHealth.expiring.length > 0 || tokenHealth.lastRefreshError ? (
+        <div className="error-box">
+          <strong>
+            <AlertTriangle size={13} /> Instagram token needs attention
+          </strong>
+          {tokenHealth.expiring.map((a) => (
+            <div key={a.instagramId}>
+              @{a.username} —{" "}
+              {a.daysLeft === null
+                ? "expiry unknown"
+                : a.daysLeft < 0
+                  ? `expired ${Math.abs(a.daysLeft)} day(s) ago`
+                  : `expires in ${a.daysLeft} day(s)`}
+            </div>
+          ))}
+          {tokenHealth.lastRefreshError ? (
+            <div>
+              Last auto-refresh failed ({new Date(tokenHealth.lastRefreshError.createdAt).toLocaleString()}):{" "}
+              {tokenHealth.lastRefreshError.message}
+            </div>
+          ) : null}
+          <div className="u-mt-xs">Reconnect the account below to issue a fresh token.</div>
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card-title">Instagram accounts</div>

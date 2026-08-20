@@ -4,3 +4,4 @@ export * from "./repository.js";
 export * from "./pipeline.js";
 export * from "./openreply-bridge.js";
 export * from "./stats.js";
+export * from "./retention.js";

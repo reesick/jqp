@@ -38,6 +38,12 @@ const envObjectSchema = z.object({
 
   OPENREPLY_DASHBOARD_URL: z.string().url().default("http://localhost:3100"),
 
+  // Data retention (see packages/publisher/src/retention.ts). Raw Meta webhook
+  // payloads are deleted outright; commenter-identifying columns on DM/comment
+  // logs are nulled in place so historical counts stay stable.
+  RAW_PAYLOAD_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  PII_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
   QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().default(8080),
 

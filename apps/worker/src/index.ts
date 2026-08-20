@@ -2,8 +2,15 @@ import { loadRootDotenv } from "@jqp/core/bootstrap";
 loadRootDotenv();
 
 import { loadEnv, rootLogger, registerDbShutdownHooks } from "@jqp/core";
-import { ensureQueues, registerPublishPostWorker, registerSyncCampaignWorker, registerQueueShutdownHooks } from "@jqp/queue";
-import { runPublishPipeline, syncCampaignToOpenReply } from "@jqp/publisher";
+import {
+  ensureQueues,
+  registerPublishPostWorker,
+  registerSyncCampaignWorker,
+  registerPurgeExpiredDataWorker,
+  schedulePurgeExpiredData,
+  registerQueueShutdownHooks
+} from "@jqp/queue";
+import { runPublishPipeline, syncCampaignToOpenReply, purgeExpiredData } from "@jqp/publisher";
 import { startHealthServer } from "./health.js";
 
 async function main() {
@@ -25,6 +32,11 @@ async function main() {
   await registerSyncCampaignWorker(async (data) => {
     await syncCampaignToOpenReply(data.campaignId);
   });
+
+  await registerPurgeExpiredDataWorker(async () => {
+    await purgeExpiredData();
+  });
+  await schedulePurgeExpiredData();
 
   setReady(true);
   log.info("worker_ready");

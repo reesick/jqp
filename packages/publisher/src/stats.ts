@@ -88,6 +88,54 @@ export async function getRecentDms(limit = 8): Promise<RecentDm[]> {
   `;
 }
 
+export interface TokenHealth {
+  /** Accounts whose token expires within the warning horizon, or has already expired. */
+  expiring: { username: string; instagramId: string; tokenExpiresAt: string | null; daysLeft: number | null }[];
+  /** Most recent TOKEN_REFRESH failure, if any is still unresolved. */
+  lastRefreshError: { message: string; createdAt: string } | null;
+}
+
+/**
+ * Instagram token expiry / refresh health.
+ *
+ * OpenReply's daily refresh cron logs an OperationalEvent on failure, returns
+ * 200 and moves on — no retry, no alert, no account disable. Left alone, a
+ * token quietly expires and every publish and DM stops working with nothing
+ * visible anywhere. This surfaces both signals on our own dashboard so the
+ * failure is loud instead of silent.
+ */
+export async function getTokenHealth(warnWithinDays = 14): Promise<TokenHealth> {
+  const sql = getDb();
+  const empty: TokenHealth = { expiring: [], lastRefreshError: null };
+  if (!(await openReplyTablesExist())) return empty;
+
+  const [accounts, errors] = await Promise.all([
+    sql<{ username: string; instagramId: string; tokenExpiresAt: string | null }[]>`
+      select "username", "instagramId", "tokenExpiresAt"
+      from "InstagramAccount"
+      where "tokenExpiresAt" is not null
+        and "tokenExpiresAt" < now() + ${`${warnWithinDays} days`}::interval
+    `,
+    sql<{ message: string; createdAt: string }[]>`
+      select "message", "createdAt"
+      from "OperationalEvent"
+      where "source" = 'TOKEN_REFRESH' and "level" = 'ERROR' and "resolvedAt" is null
+      order by "createdAt" desc
+      limit 1
+    `
+  ]);
+
+  return {
+    expiring: accounts.map((a) => ({
+      ...a,
+      daysLeft: a.tokenExpiresAt
+        ? Math.floor((new Date(a.tokenExpiresAt).getTime() - Date.now()) / 86_400_000)
+        : null
+    })),
+    lastRefreshError: errors[0] ?? null
+  };
+}
+
 export async function getDmLogs(opts: { status?: string; limit?: number; offset?: number } = {}): Promise<{ rows: RecentDm[]; total: number }> {
   const sql = getDb();
   if (!(await openReplyTablesExist())) return { rows: [], total: 0 };

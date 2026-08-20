@@ -61,6 +61,9 @@ Second service in the same `render.yaml`, `openreply-worker`:
 - [ ] `DATABASE_URL` set via a Render **Environment Group** shared by `jqp-worker` and `openreply-worker`, not pasted into each service's dashboard independently — a group means one update (e.g. rotating the DB password) propagates to both instead of silently drifting out of sync
 - [ ] All four services deployed and healthy (`/api/health` on both web apps, Render's own health check on both workers)
 - [ ] Meta app **published** (Live, not Development) — see `docs/SETUP.md` §2 Step 7
+- [ ] `messaging_postbacks` webhook field subscribed, and **verified via the Graph API** rather than the console UI (the console has shown "Subscribed" while the API returned an empty array) — required for the button-gated DM flow; see `docs/COMPLIANCE.md`
+- [ ] All five requested OAuth scopes justified in the App Review submission — `vendor/openreply/META_APP_REVIEW.md` documents only three, and requesting an unjustified scope is a straightforward rejection; see `docs/COMPLIANCE.md`
+- [ ] Retention purge confirmed running (worker logs `purge_schedule_registered` at boot, `purge_completed` daily)
 - [ ] OAuth redirect URI matches the real Vercel domain exactly
 - [ ] Webhook callback URL points at OpenReply's real domain, subscribed to `comments`
 - [ ] Test comment → DM round-trip works end to end on a real (non-tester) account, or App Review is in progress for Advanced Access

@@ -4,7 +4,8 @@ import { getBoss } from "./boss.js";
 
 export const QUEUE = {
   PUBLISH_POST: "publish-post",
-  SYNC_CAMPAIGN: "sync-campaign-to-openreply"
+  SYNC_CAMPAIGN: "sync-campaign-to-openreply",
+  PURGE_EXPIRED_DATA: "purge-expired-data"
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -92,4 +93,19 @@ export function registerPublishPostWorker(handler: (data: PublishPostJobData, jo
 
 export function registerSyncCampaignWorker(handler: (data: SyncCampaignJobData, jobId: string) => Promise<void>): Promise<void> {
   return registerWorker(QUEUE.SYNC_CAMPAIGN, handler);
+}
+
+export function registerPurgeExpiredDataWorker(handler: () => Promise<void>): Promise<void> {
+  return registerWorker<Record<string, never>>(QUEUE.PURGE_EXPIRED_DATA, handler);
+}
+
+/**
+ * Schedules the retention purge daily at 04:00 UTC. pg-boss treats schedule()
+ * as an upsert keyed on queue name, so calling it on every worker boot is safe
+ * and keeps the cron definition in code rather than in someone's dashboard.
+ */
+export async function schedulePurgeExpiredData(): Promise<void> {
+  const boss = await getBoss();
+  await boss.schedule(QUEUE.PURGE_EXPIRED_DATA, "0 4 * * *", {}, { tz: "UTC" });
+  rootLogger.info("purge_schedule_registered", { cron: "0 4 * * *" });
 }
