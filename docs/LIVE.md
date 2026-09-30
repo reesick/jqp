@@ -4,12 +4,24 @@ The actual production URLs and settings for this project, and how to re-verify t
 
 ## Deployed services
 
-| Service | URL | Platform | Root dir | Status |
+Updated 2026-10-01. There are four Vercel projects; only two matter.
+
+| Service | Vercel project | URL | Root dir | Status |
 |---|---|---|---|---|
-| jqp dashboard | https://jqp-web-89h2-wheat.vercel.app | Vercel | `apps/web` | live |
-| OpenReply | https://jqp-openreply-1.vercel.app | Vercel | `vendor/openreply` | live |
-| jqp publish worker | — | **local only** | `apps/worker` | run on demand |
-| OpenReply DM worker | — | Oracle Cloud free VM | `vendor/openreply` | see `docs/ORACLE-WORKER.md` |
+| jqp dashboard (**production**) | `jqp-web` | https://jqp-web-tau.vercel.app | `apps/web` | live, canonical |
+| jqp dashboard (old duplicate) | `jqp-web-89h2` | https://jqp-web-89h2-wheat.vercel.app | `apps/web` | **duplicate, candidate for retirement** |
+| OpenReply (**wired to Meta**) | `jqp-openreply-1` | https://jqp-openreply-1.vercel.app | `vendor/openreply` | live, canonical; webhook + OpenReply OAuth point here |
+| OpenReply (duplicate copy) | `jqp-openreply` | https://jqp-openreply-zeta.vercel.app | `vendor/openreply` | duplicate, not wired to Meta |
+| jqp publish worker | (none) | none | `apps/worker` | **local only**, run on demand |
+| OpenReply DM worker | (none) | none | `vendor/openreply` | always-on host, e.g. Oracle free VM, see `docs/ORACLE-WORKER.md` |
+
+Before retiring either duplicate, confirm nothing still references it: the Meta app's redirect URIs and webhook callback, any bookmarks, and the env vars in the other projects (`OPENREPLY_DASHBOARD_URL`, `NEXTAUTH_URL`). Do not delete a project that shares env or domains with the canonical one without checking first. Retirement has not been done.
+
+### Known issue: OpenReply `/api/health` hangs (Redis)
+
+Status as of 2026-10-01: **the owner is verifying the Upstash database**; the cause is not yet confirmed.
+
+The endpoint checks the database, pings Redis, reads queue counts and reads the DM worker heartbeat, and the heartbeat is stored in Redis too. OpenReply creates its ioredis clients with `maxRetriesPerRequest: null` (`vendor/openreply/lib/queue/client.ts` and `lib/utils/rate-limiter.ts`; required by BullMQ), which makes commands retry forever instead of erroring. If Redis is unreachable (paused or deleted Upstash database, wrong or rotated `REDIS_URL`, TLS/URL format), the request hangs until the platform times it out rather than returning `redis: error`. Comment-to-DM cannot work while Redis is down because the queue and rate limiter need it. Not fixable in this repo, because `vendor/openreply` is vendored unmodified. Check the Upstash console and `REDIS_URL` (must be the `rediss://` ioredis URL, identical on `jqp-openreply-1` and the DM worker).
 
 ## Why the publish worker is not deployed anywhere
 
@@ -39,18 +51,20 @@ Note the connection string differs from the direct one in **two** places, and th
 ## Environment values that must match the live domains
 
 **jqp-web**
-- `APP_BASE_URL` = `https://jqp-web-89h2-wheat.vercel.app`
-- `META_OAUTH_REDIRECT_URI` = `https://jqp-web-89h2-wheat.vercel.app/api/meta/oauth/callback`
+- `APP_BASE_URL` = `https://jqp-web-tau.vercel.app`
+- `META_OAUTH_REDIRECT_URI` = `https://jqp-web-tau.vercel.app/api/meta/oauth/callback`
 - `OPENREPLY_DASHBOARD_URL` = `https://jqp-openreply-1.vercel.app`
 
-**jqp-openreply**
+**jqp-openreply-1**
 - `NEXTAUTH_URL` = `https://jqp-openreply-1.vercel.app` — magic-link login silently breaks if this is wrong, since Auth.js builds every login URL from it
 
 ## Meta configuration
 
 - Webhook callback: `https://jqp-openreply-1.vercel.app/api/webhook`
-- OAuth redirect: `https://jqp-web-89h2-wheat.vercel.app/api/meta/oauth/callback`
-- Subscribed fields: `comments`, `messages`, `messaging_postbacks`
+- OAuth redirect (dashboard): `https://jqp-web-tau.vercel.app/api/meta/oauth/callback`
+- OAuth redirect (OpenReply's own Connect Instagram): `https://jqp-openreply-1.vercel.app/api/instagram/callback`
+- Subscribed fields: `comments`, `messaging_postbacks` are required; `messages` is optional and is subscribed automatically when an account is connected in OpenReply
+- Full account setup: `docs/ADD-ACCOUNT.md`
 - `messaging_seen` deliberately NOT subscribed — see `docs/COMPLIANCE.md`
 
 ## Prisma baseline (one-time, already done)
@@ -67,13 +81,15 @@ for m in $(ls prisma/migrations | grep -v migration_lock); do npx prisma migrate
 ## Re-verify everything
 
 ```bash
-cd /d/jqp && TOKEN=$(grep "^WEBHOOK_VERIFY_TOKEN=" vendor/openreply/.env | cut -d= -f2) && echo "--- jqp-web ---" && curl -s https://jqp-web-89h2-wheat.vercel.app/api/health && echo && echo "--- openreply webhook ---" && curl -s -w " HTTP:%{http_code}\n" "https://jqp-openreply-1.vercel.app/api/webhook?hub.mode=subscribe&hub.verify_token=${TOKEN}&hub.challenge=OK" && echo "--- openreply health ---" && curl -s https://jqp-openreply-1.vercel.app/api/health
+# Set TOKEN to your webhook verify token (the META_WEBHOOK_VERIFY_TOKEN value). Do not commit it or paste it into shared places.
+TOKEN="<YOUR_VERIFY_TOKEN>"
+echo "--- jqp-web ---" && curl -s https://jqp-web-tau.vercel.app/api/health && echo && echo "--- openreply webhook ---" && curl -s -w " HTTP:%{http_code}\n" "https://jqp-openreply-1.vercel.app/api/webhook?hub.mode=subscribe&hub.verify_token=${TOKEN}&hub.challenge=OK" && echo "--- openreply health ---" && curl -s --max-time 20 https://jqp-openreply-1.vercel.app/api/health
 ```
 
 Expected:
 - jqp-web → `{"success":true,"db":"ok",...}`
 - webhook → `OK HTTP:200`
-- OpenReply → `database: ok`, `redis: ok`, `queue: ok`. `worker.healthy` stays `false` until the Render worker is deployed — that alone makes the endpoint return 503, which is correct, not a fault.
+- OpenReply → JSON with `checks.database.status`, `checks.redis.status`, `checks.queue.status` all `ok` and `checks.worker.healthy` true. `worker.healthy` is `false` whenever the DM worker is not running, which alone makes the endpoint return 503; that is expected, not a fault. If the request hangs instead of answering, see the known issue above.
 
 ## Build gotchas already solved
 
