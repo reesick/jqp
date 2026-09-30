@@ -62,6 +62,12 @@ export async function listPosts(): Promise<PostRow[]> {
   return sql<PostRow[]>`select * from posts order by created_at desc`;
 }
 
+/** Newest posts only. The overview needs a handful, not the whole table. */
+export async function listRecentPosts(limit = 5): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql<PostRow[]>`select * from posts order by created_at desc limit ${limit}`;
+}
+
 export interface PostStatusUpdate {
   status: PostStatus;
   errorMessage?: string | null;

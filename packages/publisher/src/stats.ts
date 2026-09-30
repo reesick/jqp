@@ -26,10 +26,18 @@ export interface RecentDm {
   createdAt: string;
 }
 
+// OpenReply's tables never disappear once migrated, so a positive answer is
+// cached for the life of the process. Without this every DM query paid an
+// extra database round trip first. A negative answer is deliberately not
+// cached, so the dashboard picks the tables up as soon as they exist.
+let openReplyTablesKnown = false;
+
 async function openReplyTablesExist(): Promise<boolean> {
+  if (openReplyTablesKnown) return true;
   const sql = getDb();
   const rows = await sql<{ exists: boolean }[]>`select to_regclass('public."DmLog"') is not null as exists`;
-  return rows[0]?.exists ?? false;
+  openReplyTablesKnown = rows[0]?.exists ?? false;
+  return openReplyTablesKnown;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {

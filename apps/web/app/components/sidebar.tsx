@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listPosts, listCampaigns, getDashboardStats } from "@jqp/publisher";
+import { getStats } from "../lib/data";
 import { LayoutDashboard, ImageIcon, MessageSquare, Send, Settings, LogOut } from "./icons";
 import { LogoMark } from "./logo-mark";
 
@@ -12,12 +12,12 @@ const LINKS = [
 ];
 
 export async function Sidebar({ active }: { active: string }) {
-  const [posts, campaigns, stats] = await Promise.all([listPosts(), listCampaigns(), getDashboardStats()]);
-  const counts: Record<string, number> = {
-    "/posts": posts.length,
-    "/campaigns": campaigns.filter((c) => c.enabled).length,
-    "/dm-activity": stats.dm.totalSent
-  };
+  // Counts come from the same aggregate the overview uses (deduped per
+  // request), so the sidebar no longer scans whole tables on every page.
+  const stats = await getStats().catch(() => null);
+  const counts: Record<string, number> = stats
+    ? { "/posts": stats.posts.total, "/campaigns": stats.campaigns.enabled, "/dm-activity": stats.dm.totalSent }
+    : {};
 
   return (
     <aside className="sidebar">

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getDashboardStats, getRecentDms, listPosts } from "@jqp/publisher";
+import { getRecentDms, listRecentPosts } from "@jqp/publisher";
+import { getStats } from "../lib/data";
 import { StatusBadge } from "../components/status-badge";
 import { LayoutDashboard, Rocket, Radio, Send, AlertTriangle } from "../components/icons";
 
@@ -7,8 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Overview" };
 
 export default async function OverviewPage() {
-  const [stats, recentDms, posts] = await Promise.all([getDashboardStats(), getRecentDms(6), listPosts()]);
-  const recentPosts = posts.slice(0, 5);
+  const [stats, recentDms, recentPosts] = await Promise.all([getStats(), getRecentDms(6), listRecentPosts(5)]);
   const needsAttention = stats.posts.failed + stats.dm.totalFailed;
 
   return (
