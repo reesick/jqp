@@ -25,6 +25,8 @@ interface AlertRow {
 }
 
 export interface MonitorResult {
+  /** False when alert state could not be read, so transition alerts were skipped. */
+  stateAvailable: boolean;
   checked: number;
   failing: string[];
   newlyFailing: string[];
@@ -60,6 +62,13 @@ async function sendEmail(subject: string, lines: string[]): Promise<{ sent: bool
   }
 }
 
+// In-memory throttle for the "database unreachable" email. Alert state lives in
+// the database, so when the database is the thing that is down there is nowhere
+// durable to remember that we already told you. Per-instance and best effort:
+// worst case is one email per hour per warm instance, never one every 10 minutes.
+let lastDbDownEmailAt = 0;
+const DB_DOWN_EMAIL_INTERVAL_MS = 60 * 60 * 1000;
+
 function describe(checks: ServiceStatus[]): string[] {
   return checks.map((c) => `- ${c.label}: ${c.detail}`);
 }
@@ -74,11 +83,31 @@ export async function runMonitor(existing?: SystemSnapshot): Promise<MonitorResu
   try {
     rows = await sql<AlertRow[]>`select key, status, since, last_notified_at, detail from alert_state`;
   } catch (err) {
+    const failing = snapshot.services.filter((s) => s.state !== "ok").map((s) => s.key);
+    const base = { stateAvailable: false, checked: snapshot.services.length, failing, newlyFailing: [] as string[], recovered: [] as string[], emailed: false };
+
     if (/alert_state/.test(String(err)) && /does not exist/.test(String(err))) {
+      // Without the state table every failing check would look new on every run and
+      // email every 10 minutes. Stay quiet until the migration is applied.
       rootLogger.warn("alert_state_table_missing", { hint: "apply supabase/migrations/0008_system_events.sql" });
-    } else {
-      throw err;
+      return { ...base, emailSkippedReason: "migration 0008 not applied: alerts are disabled until it is" };
     }
+
+    // The database itself is unreachable. Say so, at most once an hour.
+    rootLogger.error("monitor_state_unreadable", { error: scrubText(err instanceof Error ? err.message : String(err)) });
+    if (Date.now() - lastDbDownEmailAt > DB_DOWN_EMAIL_INTERVAL_MS) {
+      const result = await sendEmail("[DOWN] jqp: database unreachable", [
+        "The monitor could not read from the database, so the system cannot be fully checked.",
+        "",
+        ...describe(snapshot.services.filter((s) => s.state !== "ok")),
+        "",
+        `Dashboard: ${dashboard}/system`,
+        `Checked at ${snapshot.generatedAt}`
+      ]);
+      if (result.sent) lastDbDownEmailAt = Date.now();
+      return { ...base, emailed: result.sent, emailSkippedReason: result.reason };
+    }
+    return { ...base, emailSkippedReason: "database unreachable; already emailed within the last hour" };
   }
   const previous = new Map(rows.map((r) => [r.key, r]));
 
@@ -152,6 +181,7 @@ export async function runMonitor(existing?: SystemSnapshot): Promise<MonitorResu
   }
 
   return {
+    stateAvailable: true,
     checked: snapshot.services.length,
     failing: snapshot.services.filter((s) => s.state !== "ok").map((s) => s.key),
     newlyFailing: newlyFailing.map((s) => s.key),

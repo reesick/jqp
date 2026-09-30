@@ -1,6 +1,6 @@
 import { getDb, loadEnv } from "@jqp/core";
 import { listRecentEvents, scrubText, type SystemEvent } from "./events.js";
-import { getDashboardStats, getTokenHealth, type TokenHealth } from "./stats.js";
+import { getDashboardStats, getTokenHealth, type DashboardStats, type TokenHealth } from "./stats.js";
 
 /**
  * One consolidated, privacy-safe view of "is the system working?".
@@ -129,11 +129,24 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   }
 
   // 2. OpenReply health (Redis, queue, DM worker) in parallel with the data reads.
+  // The page must render even if the database hiccups after the first check, so each read
+  // falls back to an empty value and the gap is reported as a warning instead of a 500.
+  let dataReadFailed = false;
+  const soft = <T,>(promise: Promise<T>, fallback: T): Promise<T> =>
+    promise.catch(() => {
+      dataReadFailed = true;
+      return fallback;
+    });
+  const emptyStats: DashboardStats = {
+    posts: { total: 0, published: 0, failed: 0, inProgress: 0 },
+    campaigns: { total: 0, enabled: 0, synced: 0 },
+    dm: { totalSent: 0, sentLast7Days: 0, totalFailed: 0 }
+  };
   const [health, stats, token, events] = await Promise.all([
     fetchOpenReplyHealth(),
-    getDashboardStats(),
-    getTokenHealth(),
-    listRecentEvents({ limit: 30, sinceHours: 24 * 7 })
+    soft(getDashboardStats(), emptyStats),
+    soft(getTokenHealth(), { expiring: [], lastRefreshError: null } as TokenHealth),
+    soft(listRecentEvents({ limit: 30, sinceHours: 24 * 7 }), [] as SystemEvent[])
   ]);
 
   const c = health.checks;
@@ -178,6 +191,7 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
   let lastWebhookAt: string | null = null;
   let openReplyErrors: SystemSnapshot["openReplyErrors"] = [];
 
+  try {
   const tablesExist = (await sql<{ exists: boolean }[]>`select to_regclass('public."DmLog"') is not null as exists`)[0]?.exists ?? false;
   if (tablesExist) {
     const [windowRows, hourRows, dayRows, failureRows, webhookRows, opRows] = await Promise.all([
@@ -186,7 +200,7 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
       sql<{ count: string }[]>`
         select count(*) from "DmLog" where status = 'SENT' and "dmSentAt" > now() - interval '1 hour'`,
       sql<{ day: string; sent: string; failed: string }[]>`
-        select to_char(date_trunc('day', "createdAt" at time zone 'Asia/Kolkata'), 'YYYY-MM-DD') as day,
+        select to_char(date_trunc('day', ("createdAt" at time zone 'UTC') at time zone 'Asia/Kolkata'), 'YYYY-MM-DD') as day,
                count(*) filter (where status = 'SENT') as sent,
                count(*) filter (where status = 'FAILED') as failed
         from "DmLog" where "createdAt" > now() - interval '7 days'
@@ -224,6 +238,10 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
 
     lastWebhookAt = webhookRows[0]?.at ?? null;
     openReplyErrors = opRows.map((r) => ({ ...r, message: scrubText(r.message) }));
+  }
+
+  } catch {
+    dataReadFailed = true;
   }
 
   // 4. Derived service states from the outcomes above.
@@ -265,6 +283,10 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
     state: stats.posts.failed > 0 ? "warn" : "ok",
     detail: stats.posts.failed > 0 ? `${stats.posts.failed} failed ${stats.posts.failed === 1 ? "post needs" : "posts need"} a retry` : "No failed posts"
   });
+
+  if (dataReadFailed) {
+    services.push({ key: "data-read", label: "Dashboard data", state: "warn", detail: "Some figures could not be read just now and may be incomplete" });
+  }
 
   return {
     generatedAt: new Date().toISOString(),

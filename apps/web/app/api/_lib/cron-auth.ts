@@ -11,7 +11,13 @@ import { timingSafeEqualString } from "@jqp/core/edge-safe";
  * resist guessing, so an unconfigured deployment is closed rather than open.
  */
 export function requireMonitorToken(request: Request): NextResponse | null {
-  const token = loadEnv().MONITOR_TOKEN.trim();
+  let token = "";
+  try {
+    token = loadEnv().MONITOR_TOKEN.trim();
+  } catch {
+    // An invalid environment is a configuration problem, not a server crash.
+    return NextResponse.json({ success: false, error: "Monitoring endpoint is not configured." }, { status: 503 });
+  }
   if (token.length < 24) {
     return NextResponse.json({ success: false, error: "Monitoring endpoint is not configured." }, { status: 503 });
   }

@@ -19,6 +19,8 @@ export async function middleware(request: NextRequest) {
 
   // /api/cron/* is called by a scheduler with a bearer token, not a browser with a cookie;
   // each route enforces that token itself (app/api/_lib/cron-auth.ts) and refuses when unset.
+  // WARNING: anything added under /api/cron/ skips the cookie check, so every new route
+  // there MUST call requireMonitorToken() first.
   if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/cron/")) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }

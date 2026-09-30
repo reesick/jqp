@@ -29,6 +29,22 @@ describe("normalizeMessageText", () => {
     expect(normalizeMessageText("Grab it [here](https://example.com/guide)")).toBe("Grab it here https://example.com/guide");
   });
 
+  it("does not touch double underscores or tildes inside URLs and identifiers", () => {
+    expect(normalizeMessageText("https://x.com/a__b__c?q=1")).toBe("https://x.com/a__b__c?q=1");
+    expect(normalizeMessageText("2 __init__ and x__y")).toBe("2 init and x__y");
+    expect(normalizeMessageText("go to https://x.com/~~user~~/page now")).toBe("go to https://x.com/~~user~~/page now");
+    expect(normalizeMessageText("price 2 ** 3 and a**b**c")).toBe("price 2 ** 3 and a**b**c");
+  });
+
+  it("stays fast and bounded on hostile input", () => {
+    const started = Date.now();
+    normalizeMessageText("~~a ".repeat(1200));
+    normalizeMessageText("*".repeat(4000));
+    normalizeMessageText("[a](https://".repeat(400));
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(() => normalizeMessageText("x".repeat(6000))).toThrow(/too long/);
+  });
+
   it("strips inline code backticks", () => {
     expect(normalizeMessageText("use `LINK` to get it")).toBe("use LINK to get it");
   });

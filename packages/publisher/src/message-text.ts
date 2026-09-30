@@ -18,7 +18,11 @@ export interface NormalizeOptions {
   singleLine?: boolean;
 }
 
+/** Far above any real DM (Instagram caps at 1000). Bounds the work the patterns below can do. */
+export const MAX_MESSAGE_INPUT = 5000;
+
 export function normalizeMessageText(input: string, opts: NormalizeOptions = {}): string {
+  if (input.length > MAX_MESSAGE_INPUT) throw new Error(`Message is too long (${input.length} characters; the limit is ${MAX_MESSAGE_INPUT}).`);
   let text = input;
 
   // Escaped whitespace typed as characters (common from JSON built by hand or by an LLM).
@@ -31,9 +35,12 @@ export function normalizeMessageText(input: string, opts: NormalizeOptions = {})
   text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 $2");
 
   // Emphasis and code markers around words: **bold**, __bold__, *italic*, _italic_, `code`, ~~strike~~.
-  text = text.replace(/(\*\*|__|~~)(?=\S)([\s\S]*?\S)\1/g, "$2");
-  text = text.replace(/(^|[\s(])\*(?=\S)([^*\n]*?\S)\*(?=$|[\s).,!?:;])/g, "$1$2");
-  text = text.replace(/(^|[\s(])_(?=\S)([^_\n]*?\S)_(?=$|[\s).,!?:;])/g, "$1$2");
+  // Every marker must start a word and close one (whitespace, line edge or punctuation on the
+  // outside), so "x__y", "a__b__c" in a URL and "__init__" inside code are left alone. The
+  // span is capped at 200 characters so a long run of stray markers cannot make this slow.
+  text = text.replace(/(^|[\s(])(\*\*|__|~~)(?=\S)([^\n]{0,200}?\S)\2(?=$|[\s).,!?:;])/g, "$1$3");
+  text = text.replace(/(^|[\s(])\*(?=\S)([^*\n]{0,200}?\S)\*(?=$|[\s).,!?:;])/g, "$1$2");
+  text = text.replace(/(^|[\s(])_(?=\S)([^_\n]{0,200}?\S)_(?=$|[\s).,!?:;])/g, "$1$2");
   text = text.replace(/`([^`\n]+)`/g, "$1");
 
   // Line-leading Markdown: headings, blockquotes, and "- " / "* " bullets -> a real bullet.

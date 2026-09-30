@@ -100,7 +100,7 @@ export async function listRecentEvents(opts: { limit?: number; levels?: EventLev
   const since = new Date(Date.now() - (opts.sinceHours ?? 24 * 7) * 3_600_000);
   try {
     return await sql<SystemEvent[]>`
-      select id, created_at, level, source, code, message, correlation_id, meta
+      select id::int as id, created_at, level, source, code, message, correlation_id, meta
       from system_events
       where level in ${sql(levels)} and created_at > ${since}
       order by created_at desc
