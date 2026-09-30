@@ -28,7 +28,8 @@
     "dev:worker": "npm run dev --workspace apps/worker",
     "build:web": "npm run build --workspace apps/web",
     "build:worker": "npm run build --workspace apps/worker",
-    "build:ai": "npm run build -w @jqp/ai"
+    "build:ai": "npm run build -w @jqp/ai",
+    "smoke": "tsx scripts/smoke-test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
