@@ -12,6 +12,7 @@ import {
   type CampaignSyncStatus,
   type IgAccountRow
 } from "@jqp/core";
+import { normalizeMessageText, normalizeOptionalMessage } from "./message-text.js";
 
 // --------------------------------------------------------------------
 // posts
@@ -270,12 +271,17 @@ export async function upsertCampaign(params: UpsertCampaignParams): Promise<Camp
   // three columns being truthy, so a stray "" would read the same as NULL there
   // but differ in our own UI round-trip. Same normalisation their own builder does.
   const openingDmEnabled = params.openingDmEnabled ?? false;
-  const openingDmMessage = openingDmEnabled ? params.openingDmMessage || null : null;
-  const openingDmButtonLabel = openingDmEnabled ? params.openingDmButtonLabel || null : null;
+  // Every piece of copy is stripped of Markdown / escaped-newline debris here, the
+  // one choke point all writers share (form, REST API, Claude Code tools), so none
+  // of it can reach a recipient as literal "**", "\n" or "--".
+  const openingDmMessage = openingDmEnabled ? normalizeOptionalMessage(params.openingDmMessage) : null;
+  const openingDmButtonLabel = openingDmEnabled ? normalizeOptionalMessage(params.openingDmButtonLabel, { singleLine: true }) : null;
+  const dmMessage = normalizeMessageText(params.dmMessage);
+  const publicReplyMessage = normalizeOptionalMessage(params.publicReplyMessage);
 
   const rows = await sql<CampaignRow[]>`
     insert into campaigns (post_id, trigger_keywords, match_mode, dm_message, destination_url, public_reply_enabled, public_reply_message, opening_dm_enabled, opening_dm_message, opening_dm_button_label, enabled)
-    values (${params.postId}, ${params.triggerKeywords}, ${params.matchMode}, ${params.dmMessage}, ${params.destinationUrl ?? null}, ${params.publicReplyEnabled}, ${params.publicReplyMessage ?? null}, ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel}, ${params.enabled})
+    values (${params.postId}, ${params.triggerKeywords}, ${params.matchMode}, ${dmMessage}, ${params.destinationUrl ?? null}, ${params.publicReplyEnabled}, ${publicReplyMessage}, ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel}, ${params.enabled})
     on conflict (post_id) do update set
       trigger_keywords = excluded.trigger_keywords,
       match_mode = excluded.match_mode,

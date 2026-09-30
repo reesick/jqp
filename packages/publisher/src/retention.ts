@@ -71,7 +71,7 @@ export async function purgeExpiredData(opts: { dryRun?: boolean } = {}): Promise
   if (await tableExists('"DmLog"')) {
     if (dryRun) {
       const rows = await sql<{ count: string }[]>`
-        select count(*) from "DmLog" where "createdAt" < ${piiCutoff} and "commenterName" is not null
+        select count(*) from "DmLog" where "createdAt" < ${piiCutoff} and ("commenterName" is not null or "commentText" <> '')
       `;
       result.dmLogsAnonymised = Number(rows[0]?.count ?? 0);
     } else {
@@ -81,7 +81,7 @@ export async function purgeExpiredData(opts: { dryRun?: boolean } = {}): Promise
       const rows = await sql`
         update "DmLog"
         set "commenterName" = null, "commentText" = ''
-        where "createdAt" < ${piiCutoff} and "commenterName" is not null
+        where "createdAt" < ${piiCutoff} and ("commenterName" is not null or "commentText" <> '')
         returning 1
       `;
       result.dmLogsAnonymised = rows.length;
