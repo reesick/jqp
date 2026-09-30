@@ -22,5 +22,6 @@ export {
   Search,
   X,
   Check,
-  CornerDownLeft
+  CornerDownLeft,
+  ShieldCheck
 } from "lucide-react";

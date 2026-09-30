@@ -17,7 +17,9 @@ export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
 
-  if (PUBLIC_PATHS.has(pathname)) {
+  // /api/cron/* is called by a scheduler with a bearer token, not a browser with a cookie;
+  // each route enforces that token itself (app/api/_lib/cron-auth.ts) and refuses when unset.
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/cron/")) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

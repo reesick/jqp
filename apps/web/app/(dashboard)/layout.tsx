@@ -5,7 +5,7 @@ import { CommandPalette } from "../components/command-palette";
 
 // Routes keep their original URLs; only the labels changed (Campaigns ->
 // Automations, DM Activity -> Activity). See components/sidebar.tsx.
-const NAV_ROUTES = ["/posts", "/campaigns", "/dm-activity", "/settings"];
+const NAV_ROUTES = ["/posts", "/campaigns", "/dm-activity", "/settings", "/system"];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const headerList = await headers();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadEnv, rootLogger, newCorrelationId } from "@jqp/core";
+import { recordEvent } from "@jqp/publisher";
 
 /**
  * Turns an exception into an HTTP response without leaking internals.
@@ -25,6 +26,9 @@ export function apiError(
   const correlationId = newCorrelationId("err");
 
   rootLogger.error(event, { ...opts.fields, correlationId, error: message });
+  // Durable copy so the failure is still visible tomorrow (Vercel keeps logs briefly).
+  // Fire-and-forget: recording must never slow down or break the error response.
+  if (status >= 500) void recordEvent({ level: "error", source: "api", code: event, message, correlationId });
 
   const body =
     env.NODE_ENV === "production"

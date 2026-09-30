@@ -1,0 +1,50 @@
+name: monitor
+
+# Calls the dashboard's protected endpoints on a schedule:
+#   every 10 minutes  POST /api/cron/monitor  (health check + failure alerts)
+#   daily 04:30 UTC   POST /api/cron/purge    (data retention, runs in the cloud)
+#
+# Inert until you add, under Settings > Secrets and variables > Actions:
+#   secret   MONITOR_TOKEN   same value as the MONITOR_TOKEN env var on Vercel
+#   variable MONITOR_URL     e.g. https://jqp-web-tau.vercel.app (no trailing slash)
+#
+# GitHub disables scheduled workflows after 60 days without repository activity
+# on public repos; a push or a manual run re-enables them.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}
+      MONITOR_URL: ${{ vars.MONITOR_URL }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$MONITOR_TOKEN" ] || [ -z "$MONITOR_URL" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MONITOR_TOKEN secret or MONITOR_URL variable not set; nothing to do."
+          fi
+
+      - name: Health monitor
+        if: steps.cfg.outputs.skip != 'true' && github.event.schedule != '30 4 * * *'
+        run: |
+          curl --fail-with-body -sS -m 60 -X POST \
+            -H "Authorization: Bearer $MONITOR_TOKEN" \
+            "$MONITOR_URL/api/cron/monitor"
+
+      - name: Retention purge
+        if: steps.cfg.outputs.skip != 'true' && (github.event.schedule == '30 4 * * *' || github.event_name == 'workflow_dispatch')
+        run: |
+          curl --fail-with-body -sS -m 120 -X POST \
+            -H "Authorization: Bearer $MONITOR_TOKEN" \
+            "$MONITOR_URL/api/cron/purge"

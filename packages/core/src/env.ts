@@ -62,7 +62,16 @@ const envObjectSchema = z.object({
   AWS_REGION: z.string().optional().default(""),
   AWS_ACCESS_KEY_ID: z.string().optional().default(""),
   AWS_SECRET_ACCESS_KEY: z.string().optional().default(""),
-  BEDROCK_MODEL_ID: z.string().optional().default("")
+  BEDROCK_MODEL_ID: z.string().optional().default(""),
+
+  // Monitoring. All optional: without MONITOR_TOKEN the /api/cron/* endpoints
+  // refuse every request, and without ALERT_EMAIL_TO failures are recorded and
+  // shown on the System page but no email is sent.
+  MONITOR_TOKEN: z.string().optional().default(""),
+  ALERT_EMAIL_TO: z.string().optional().default(""),
+  ALERT_EMAIL_FROM: z.string().optional().default(""),
+  ALERT_RESEND_API_KEY: z.string().optional().default(""),
+  SYSTEM_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90)
 });
 
 export const envSchema = envObjectSchema.superRefine((env, ctx) => {

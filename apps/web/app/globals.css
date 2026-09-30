@@ -717,3 +717,8 @@ select {
   .entity-card { flex-wrap: wrap; }
   .sidebar-footer { display: none; }
 }
+
+/* ---------- System page ---------- */
+
+.volume-bar { width: 100%; min-width: 80px; height: 6px; border-radius: 3px; background: var(--surface-hover); overflow: hidden; }
+.volume-bar span { display: block; height: 100%; background: var(--text-muted); border-radius: 3px; }

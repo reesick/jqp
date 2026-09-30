@@ -21,6 +21,7 @@ const COMMANDS: Command[] = [
   { id: "activity", label: "Go to Activity", group: "Go to", href: "/dm-activity", keys: "G Y", keywords: "dm log history" },
   { id: "settings", label: "Go to Settings", group: "Go to", href: "/settings", keys: "G S", keywords: "instagram account connect token" },
   { id: "ingest", label: "Ingest folder", group: "Actions", href: "/posts", keywords: "add new post upload" },
+  { id: "system", label: "Go to System health", group: "Go to", href: "/system", keys: "G X", keywords: "status errors monitoring health redis queue alerts" },
   { id: "failed-posts", label: "View failed posts", group: "Actions", href: "/posts", keywords: "errors retry" },
   { id: "failed-dms", label: "View failed DMs", group: "Actions", href: "/dm-activity?status=FAILED", keywords: "errors retry messages" }
 ];
@@ -30,7 +31,8 @@ const SEQUENCE_ROUTES: Record<string, string> = {
   p: "/posts",
   a: "/campaigns",
   y: "/dm-activity",
-  s: "/settings"
+  s: "/settings",
+  x: "/system"
 };
 
 export const OPEN_PALETTE_EVENT = "jqp:open-palette";

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { rootLogger, ValidationError, NonRetryableError, type Logger, type PostRow } from "@jqp/core";
+import { recordEvent } from "./events.js";
 import { uploadPostMedia, preflightMediaUrl, deletePostMedia } from "@jqp/storage";
 import { createChildContainer, createSingleImageContainer, createCarouselContainer, pollContainerUntilReady, publishMedia } from "@jqp/meta";
 import { enqueueSyncCampaign } from "@jqp/queue";
@@ -96,6 +97,7 @@ export async function runPublishPipeline(postId: string, folderPathOverride?: st
       // Should have been caught inside stepValidate already, but guard here too.
       await updatePostStatus(postId, { status: "VALIDATION_FAILED", errorMessage: err.message });
       log.warn("publish_pipeline_validation_failed", { error: err.message });
+      void recordEvent({ level: "warn", source: "publish", code: "post_validation_failed", message: err.message, meta: { postId } });
       return;
     }
     // NonRetryableError covers AuthError too (AuthError extends NonRetryableError) — both are terminal, a retry cannot fix either.
@@ -103,6 +105,7 @@ export async function runPublishPipeline(postId: string, folderPathOverride?: st
       const message = err.message;
       await updatePostStatus(postId, { status: "FAILED", errorMessage: message });
       log.error("publish_pipeline_failed_terminal", { error: message });
+      void recordEvent({ level: "error", source: "publish", code: "post_publish_failed", message, meta: { postId } });
       return;
     }
     // Retryable — leave status where it is (already persisted at the top of the failed step) and rethrow so pg-boss retries the job.

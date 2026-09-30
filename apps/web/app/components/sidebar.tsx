@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getStats } from "../lib/data";
-import { LayoutDashboard, ImageIcon, Zap, Activity, Settings, LogOut } from "./icons";
+import { LayoutDashboard, ImageIcon, Zap, Activity, Settings, ShieldCheck, LogOut } from "./icons";
 import { LogoMark } from "./logo-mark";
 import { PaletteHint } from "./command-palette";
 
@@ -11,7 +11,8 @@ const LINKS = [
   { href: "/posts", label: "Posts", icon: ImageIcon },
   { href: "/campaigns", label: "Automations", icon: Zap },
   { href: "/dm-activity", label: "Activity", icon: Activity },
-  { href: "/settings", label: "Settings", icon: Settings }
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/system", label: "System", icon: ShieldCheck }
 ];
 
 export async function Sidebar({ active }: { active: string }) {
