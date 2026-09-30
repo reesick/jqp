@@ -518,3 +518,29 @@ select {
   .overview-grid { grid-template-columns: 1fr; }
   .page-header { flex-wrap: wrap; }
 }
+
+/* ---------- Home ---------- */
+
+.home-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 var(--space-lg);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.home-status svg { color: var(--success); }
+.home-status.warn { color: var(--text-primary); }
+.home-status.warn svg { color: var(--warning); }
+
+.home-section { margin-bottom: var(--space-lg); }
+.section-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-xs);
+}
+.timeline-time { margin-left: auto; color: var(--text-muted); }

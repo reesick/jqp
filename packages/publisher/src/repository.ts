@@ -68,6 +68,17 @@ export async function listRecentPosts(limit = 5): Promise<PostRow[]> {
   return sql<PostRow[]>`select * from posts order by created_at desc limit ${limit}`;
 }
 
+/** Posts that need a human: failed pipeline runs and failed validations. */
+export async function listFailedPosts(limit = 5): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql<PostRow[]>`
+    select * from posts
+    where status in ('FAILED', 'VALIDATION_FAILED')
+    order by updated_at desc
+    limit ${limit}
+  `;
+}
+
 export interface PostStatusUpdate {
   status: PostStatus;
   errorMessage?: string | null;

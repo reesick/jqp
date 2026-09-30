@@ -3,23 +3,18 @@ export default function Loading() {
     <div aria-busy="true" aria-label="Loading">
       <div className="page-header">
         <div>
-          <div className="skeleton" style={{ width: 90, height: 12, marginBottom: 12 }} />
-          <div className="skeleton" style={{ width: 240, height: 32 }} />
+          <div className="skeleton" style={{ width: 200, height: 26 }} />
+          <div className="skeleton" style={{ width: 130, height: 14, marginTop: 10 }} />
         </div>
       </div>
-      <div className="stat-grid">
-        {[0, 1, 2, 3].map((i) => (
-          <div className="stat-tile" key={i}>
-            <div className="skeleton" style={{ width: 80, height: 12, marginBottom: 14 }} />
-            <div className="skeleton" style={{ width: 56, height: 32 }} />
-          </div>
-        ))}
-      </div>
-      <div className="card" style={{ marginTop: 24 }}>
-        {[0, 1, 2, 3].map((i) => (
-          <div className="skeleton" key={i} style={{ height: 16, margin: "14px 0", width: `${90 - i * 12}%` }} />
-        ))}
-      </div>
+      {[0, 1, 2].map((section) => (
+        <div className="home-section" key={section}>
+          <div className="skeleton" style={{ width: 90, height: 12, marginBottom: 12 }} />
+          {[0, 1].map((row) => (
+            <div className="skeleton" key={row} style={{ height: 44, marginBottom: 6 }} />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
