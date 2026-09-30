@@ -29,7 +29,11 @@
     "build:web": "npm run build --workspace apps/web",
     "build:worker": "npm run build --workspace apps/worker",
     "build:ai": "npm run build -w @jqp/ai",
-    "smoke": "tsx scripts/smoke-test.ts"
+    "smoke": "tsx scripts/smoke-test.ts",
+    "check-redis": "tsx scripts/check-redis.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "mcp:selftest": "tsx scripts/mcp-selftest.ts",
+    "mcp": "node --import tsx apps/mcp/src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

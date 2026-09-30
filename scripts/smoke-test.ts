@@ -94,6 +94,13 @@ async function checkWeb(): Promise<void> {
   const legacy = await req(`${WEB}/posts`, { headers: { cookie: "jqp_session=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" } });
   record("old-format session cookie rejected", isRedirectToLogin(legacy.res) ? "PASS" : "FAIL");
 
+  for (const path of ["/api/cron/monitor", "/api/cron/purge"]) {
+    const r = await req(`${WEB}${path}`, { method: "POST" });
+    record(`${path} refuses callers without the token`, r.res?.status === 401 || r.res?.status === 503 ? "PASS" : "FAIL", `HTTP ${r.res?.status}`);
+    const wrong = await req(`${WEB}${path}`, { method: "POST", headers: { authorization: "Bearer definitely-not-the-token-000000000" } });
+    record(`${path} refuses a wrong token`, wrong.res?.status === 401 || wrong.res?.status === 503 ? "PASS" : "FAIL", `HTTP ${wrong.res?.status}`);
+  }
+
   const xsite = await req(`${WEB}/api/posts/00000000-0000-0000-0000-000000000000/retry`, { method: "POST", headers: { "sec-fetch-site": "cross-site" } });
   record("cross-site POST blocked", xsite.res?.status === 403 ? "PASS" : "FAIL", `HTTP ${xsite.res?.status}`);
 
@@ -142,6 +149,10 @@ async function checkWeb(): Promise<void> {
     record(`GET ${path} returns data`, r.res?.status === 200 && success ? "PASS" : "FAIL", r.error ?? `HTTP ${r.res?.status}`);
   }
 
+  const sys = await req(`${WEB}/system`, { headers: { cookie } });
+  const sysCrashed = /Application error|Internal Server Error/i.test(sys.text);
+  record("System page renders", sys.res?.status === 200 && !sysCrashed ? (sys.ms > 9000 ? "WARN" : "PASS") : "FAIL", sys.error ?? `HTTP ${sys.res?.status}, ${sys.ms}ms`);
+
   const out = await req(`${WEB}/api/auth/logout`, { method: "POST", headers: { cookie } });
   const cleared = (out.res?.headers.getSetCookie?.() ?? []).some((c) => c.startsWith("jqp_session=") && /max-age=0|expires=/i.test(c));
   record("logout clears the session", out.res?.status === 303 && cleared ? "PASS" : "FAIL", `HTTP ${out.res?.status}`);
@@ -171,7 +182,9 @@ async function checkOpenReply(): Promise<void> {
     return;
   }
   try {
-    const body = JSON.parse(health.text) as Record<string, unknown>;
+    // OpenReply nests its results under `checks`: { status, checks: { database, redis, queue, worker } }.
+    const parsed = JSON.parse(health.text) as { checks?: Record<string, unknown> };
+    const body = parsed.checks ?? {};
     const detail = (k: string) => {
       const v = body[k] as { status?: string; healthy?: boolean } | undefined;
       return v?.status ?? (v?.healthy === true ? "ok" : v?.healthy === false ? "down" : "missing");

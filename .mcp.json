@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "jqp": {
+      "command": "node",
+      "args": [
+        "--import",
+        "tsx",
+        "apps/mcp/src/index.ts"
+      ]
+    }
+  }
+}

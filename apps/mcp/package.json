@@ -1,0 +1,23 @@
+{
+  "name": "@jqp/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server that lets Claude Code drive jqp: check health, ingest a post folder, publish, and configure comment-to-DM campaigns.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@jqp/core": "*",
+    "@jqp/queue": "*",
+    "@jqp/publisher": "*",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -254,6 +254,10 @@ Labels are being renamed (Home, Posts, Automations, Activity, Settings) on branc
 | `npm test` / `npm run test:watch` | Vitest |
 | `npm run lint` | ESLint |
 | `npm run check-env` | Validate `.env` |
+| `npm run doctor` | Integration check: schema, migrations, Meta token and webhook subscription, OpenReply account, storage, Redis (read-only, prints no secrets) |
+| `npm run smoke` | Live test of the deployed site: real login, every page, webhook, security controls |
+| `npm run check-redis` | Host, TLS and PING for the DM queue's Redis (never prints the password) |
+| `npm run mcp:selftest` | Start the Claude Code server and exercise its tools |
 | `npm run migrate` | Apply Supabase migrations (ledgered, re-runnable) |
 | `npm run ingest -- "<folder>"` | Register a post folder |
 | `npm run generate-caption -- "<folder>" "<brief>"` | AI caption pre-step (needs `AI_ENABLED=true`) |
@@ -338,6 +342,11 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 | `docs/LIVE.md` | Actual production URLs, DB string, build gotchas, re-verify commands |
 | `docs/PRODUCTION.md` | Production-readiness checklist with verification commands |
 | `docs/COMPLIANCE.md` | Meta rules, webhook fields, scopes, retention |
+| `docs/DATA-PROTECTION.md` | What personal data is held, Meta data obligations, scale review, open gaps |
+| `docs/SECURITY-AUDIT.md` | Independent security audit and what was fixed |
+| `docs/MONITORING.md` | The System page, error recording, alerts, scale notes |
+| `docs/CLAUDE-CODE.md` | Driving the system from Claude Code (MCP tools, safety, prompts) |
+| `docs/MORNING-CHECKLIST.md` | What only the owner can do next, in priority order |
 | `docs/ORACLE-WORKER.md` | DM worker on an Oracle free VM |
 | `docs/RENDER-FREE.md` | Render free-tier alternative for workers (sleeps; needs a pinger) |
 | `docs/TASKS.md` | Historical build log and honest ratings |

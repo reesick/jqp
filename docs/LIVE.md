@@ -19,7 +19,7 @@ Before retiring either duplicate, confirm nothing still references it: the Meta 
 
 ### Known issue: OpenReply `/api/health` hangs (Redis)
 
-Status as of 2026-10-01: **the owner is verifying the Upstash database**; the cause is not yet confirmed.
+Status as of 2026-10-01: **cause confirmed.** The Upstash database `joint-civet-121910` no longer exists: its hostname does not resolve (`ENOTFOUND`) while other hosts resolve from the same machine. `npm run check-redis` reproduces this. Fix: create a new database and update `REDIS_URL` everywhere (`docs/MORNING-CHECKLIST.md`, step 1).
 
 The endpoint checks the database, pings Redis, reads queue counts and reads the DM worker heartbeat, and the heartbeat is stored in Redis too. OpenReply creates its ioredis clients with `maxRetriesPerRequest: null` (`vendor/openreply/lib/queue/client.ts` and `lib/utils/rate-limiter.ts`; required by BullMQ), which makes commands retry forever instead of erroring. If Redis is unreachable (paused or deleted Upstash database, wrong or rotated `REDIS_URL`, TLS/URL format), the request hangs until the platform times it out rather than returning `redis: error`. Comment-to-DM cannot work while Redis is down because the queue and rate limiter need it. Not fixable in this repo, because `vendor/openreply` is vendored unmodified. Check the Upstash console and `REDIS_URL` (must be the `rediss://` ioredis URL, identical on `jqp-openreply-1` and the DM worker).
 
