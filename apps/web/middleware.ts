@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sha256Hex, timingSafeEqualString } from "@jqp/core/edge-safe";
+import { verifySessionToken } from "@jqp/core/edge-safe";
 
 // Edge runtime middleware — deliberately does not import the main @jqp/core
 // entrypoint (its barrel export pulls in postgres.js, which needs Node's
@@ -21,13 +21,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
+  // Defence in depth on top of SameSite=Lax: refuse state-changing requests that
+  // the browser says came from another site. Requests without the header
+  // (curl, older browsers) are unaffected.
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (request.method !== "GET" && request.method !== "HEAD" && fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+    return NextResponse.json({ success: false, error: "Cross-site request blocked" }, { status: 403 });
+  }
+
   const secret = process.env.DASHBOARD_SHARED_SECRET;
   const cookie = request.cookies.get(COOKIE_NAME)?.value;
 
-  // The cookie holds sha256(secret), never the raw secret itself (see
-  // /api/auth/login) — a leaked cookie can't be reused as the secret
-  // elsewhere, and the comparison is constant-time on the hash.
-  const authorized = Boolean(secret) && Boolean(cookie) && timingSafeEqualString(cookie!, await sha256Hex(secret!));
+  // The cookie is an expiring HMAC token (see createSessionToken): signed with
+  // the secret, time-limited, and rotating the secret invalidates every session.
+  const authorized = await verifySessionToken(cookie, secret ?? "");
 
   if (!authorized) {
     if (pathname.startsWith("/api/")) {

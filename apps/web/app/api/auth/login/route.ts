@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadEnv, rootLogger } from "@jqp/core";
-import { sha256Hex, timingSafeEqualString } from "@jqp/core/edge-safe";
+import { SESSION_TTL_MS, createSessionToken, sha256Hex, timingSafeEqualString } from "@jqp/core/edge-safe";
 
 const COOKIE_NAME = "jqp_session";
 
@@ -20,6 +20,10 @@ const attempts = new Map<string, { count: number; resetAt: number }>();
 
 function rateLimit(key: string): { allowed: boolean } {
   const now = Date.now();
+  // Drop expired windows so the map can't grow without bound on a warm instance.
+  if (attempts.size > 500) {
+    for (const [k, v] of attempts) if (now > v.resetAt) attempts.delete(k);
+  }
   const entry = attempts.get(key);
 
   if (!entry || now > entry.resetAt) {
@@ -82,6 +86,9 @@ export async function POST(request: NextRequest) {
 
   if (!ok) {
     recordFailure(ip);
+    // Fixed delay on every failure: the per-instance limiter above resets on
+    // cold starts, so this is what bounds guess rate from a single connection.
+    await new Promise((resolve) => setTimeout(resolve, 500));
     rootLogger.warn("login_failed", { ip });
     const url = new URL("/login", request.url);
     url.searchParams.set("error", "1");
@@ -91,16 +98,16 @@ export async function POST(request: NextRequest) {
 
   clearFailures(ip);
 
-  // Store a hash of the secret, not the secret itself — a leaked cookie
-  // can't be replayed as DASHBOARD_SHARED_SECRET anywhere else, only as
-  // this specific session (see apps/web/middleware.ts for the check).
+  // The cookie is a signed, expiring token (see createSessionToken), not the
+  // secret or a hash of it: a leaked cookie stops working after the TTL and
+  // can't be attacked offline to recover the secret.
   const response = NextResponse.redirect(new URL(next, request.url), { status: 303 });
-  response.cookies.set(COOKIE_NAME, await sha256Hex(env.DASHBOARD_SHARED_SECRET), {
+  response.cookies.set(COOKIE_NAME, await createSessionToken(env.DASHBOARD_SHARED_SECRET), {
     httpOnly: true,
     sameSite: "lax",
     secure: env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30
+    maxAge: Math.floor(SESSION_TTL_MS / 1000)
   });
   return response;
 }

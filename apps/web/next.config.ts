@@ -9,6 +9,23 @@ import { loadRootDotenv } from "@jqp/core/bootstrap";
 loadRootDotenv();
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  // The app renders no remote images; turning the optimizer off removes an
+  // unauthenticated route (/_next/image bypasses the auth middleware).
+  images: { unoptimized: true },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
+        ]
+      }
+    ];
+  },
   // @jqp/* workspace packages are plain TS compiled to dist/ — nothing
   // Next-specific needed here, but transpilePackages keeps things safe
   // if a package is ever imported before its dist/ is built.
