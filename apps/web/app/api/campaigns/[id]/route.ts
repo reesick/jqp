@@ -53,6 +53,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       destinationUrl: body.destinationUrl ?? existing.destination_url,
       publicReplyEnabled: body.publicReplyEnabled ?? existing.public_reply_enabled,
       publicReplyMessage: body.publicReplyMessage ?? existing.public_reply_message,
+      // Not editable through PATCH, so carry them over. Omitting them made
+      // upsertCampaign reset the two-step DM flow to off on every PATCH.
+      openingDmEnabled: existing.opening_dm_enabled,
+      openingDmMessage: existing.opening_dm_message,
+      openingDmButtonLabel: existing.opening_dm_button_label,
       enabled: body.enabled ?? existing.enabled
     });
 

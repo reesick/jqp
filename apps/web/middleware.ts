@@ -34,7 +34,8 @@ export async function middleware(request: NextRequest) {
 
   // The cookie is an expiring HMAC token (see createSessionToken): signed with
   // the secret, time-limited, and rotating the secret invalidates every session.
-  const authorized = await verifySessionToken(cookie, secret ?? "");
+  // Trim to match loadEnv(), which trims this value when login signs the token.
+  const authorized = await verifySessionToken(cookie, secret?.trim() ?? "");
 
   if (!authorized) {
     if (pathname.startsWith("/api/")) {
