@@ -4,7 +4,7 @@ import { StatusBadge } from "../../components/status-badge";
 import { IngestForm } from "../../components/ingest-form";
 import { ActionButton } from "../../components/action-button";
 import { EmptyState } from "../../components/empty-state";
-import { ImageIcon, Inbox, Rocket, RotateCw } from "../../components/icons";
+import { Inbox, Rocket, RotateCw } from "../../components/icons";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Posts" };
@@ -15,18 +15,18 @@ export default async function PostsPage() {
   return (
     <>
       <div className="page-header">
-        <div>
-          <span className="eyebrow">
-            <ImageIcon size={12} /> Publishing
-          </span>
-          <h1>Posts</h1>
-        </div>
+        <h1>Posts</h1>
       </div>
 
       <IngestForm />
 
+      <h3 className="section-label u-mt-lg">All posts</h3>
       {posts.length === 0 ? (
-        <EmptyState icon={<Inbox size={28} />} title="No posts yet. Ingest a folder above to get started." />
+        <EmptyState
+          icon={<Inbox size={24} />}
+          title="No posts yet."
+          hint="Add a folder above. It needs 1.jpg, 2.jpg, … and a caption.md."
+        />
       ) : (
         posts.map((post) => (
           <div className="entity-card" key={post.id}>
@@ -35,9 +35,12 @@ export default async function PostsPage() {
                 <Link href={`/posts/${post.id}`}>{post.campaign_id}</Link>
               </div>
               <div className="entity-meta">
-                <span>{new Date(post.created_at).toLocaleString()}</span>
+                <span className="mono">{new Date(post.created_at).toLocaleString()}</span>
                 {post.instagram_media_id ? <span className="mono">{post.instagram_media_id}</span> : null}
               </div>
+              {post.error_message && (post.status === "FAILED" || post.status === "VALIDATION_FAILED") ? (
+                <div className="entity-note">{post.error_message}</div>
+              ) : null}
             </div>
             <StatusBadge status={post.status} />
             {post.status === "DISCOVERED" ? (

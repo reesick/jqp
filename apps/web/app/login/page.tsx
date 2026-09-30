@@ -6,23 +6,35 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   return (
     <div className="auth-shell">
-      <div className="card auth-card">
-        <h1>
+      <main className="auth-panel">
+        <h1 className="auth-title">
           <LogoMark /> jqp
         </h1>
-        <p className="muted u-text-sm">Enter the dashboard shared secret to continue.</p>
-        {params.error ? <div className="error-box">Incorrect secret.</div> : null}
+        <p className="muted u-text-sm">Enter the dashboard secret to continue.</p>
+        {params.error ? (
+          <div className="error-box" role="alert" id="login-error">
+            That secret didn&rsquo;t work. Check it and try again. After several wrong attempts, logins are paused for
+            about 15 minutes.
+          </div>
+        ) : null}
         <form action="/api/auth/login" method="post">
           <input type="hidden" name="next" value={params.next ?? "/"} />
-          <label>
-            Shared secret
-            <input type="password" name="secret" autoFocus required />
-          </label>
-          <button type="submit" className="btn-block u-mt-xs">
+          <label htmlFor="secret">Dashboard secret</label>
+          <input
+            id="secret"
+            type="password"
+            name="secret"
+            autoFocus
+            required
+            autoComplete="current-password"
+            aria-invalid={params.error ? true : undefined}
+            aria-describedby={params.error ? "login-error" : undefined}
+          />
+          <button type="submit" className="btn-block u-mt-sm">
             Log in
           </button>
         </form>
-      </div>
+      </main>
     </div>
   );
 }

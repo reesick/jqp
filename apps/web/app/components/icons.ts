@@ -14,5 +14,13 @@ export {
   Loader2,
   Inbox,
   FolderOpen,
-  Link2
+  Link2,
+  Zap,
+  Activity,
+  Circle,
+  Pause,
+  Search,
+  X,
+  Check,
+  CornerDownLeft
 } from "lucide-react";

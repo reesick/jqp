@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { PostRow } from "@jqp/core";
 import { Toggle } from "./toggle";
 import { Spinner } from "./spinner";
+import { useToast } from "./toast";
 
 interface Props {
   posts: PostRow[];
@@ -44,6 +45,7 @@ function looksUndisclosed(message: string): boolean {
 
 export function CampaignForm({ posts, defaultPostId, existing }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [postId, setPostId] = useState(existing?.post_id ?? defaultPostId ?? posts[0]?.id ?? "");
   const [keywords, setKeywords] = useState(existing?.trigger_keywords.join(", ") ?? "");
   const [matchMode, setMatchMode] = useState(existing?.match_mode ?? "WHOLE_WORD");
@@ -60,6 +62,10 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    await save();
+  }
+
+  async function save() {
     setPending(true);
     setError(null);
     try {
@@ -83,11 +89,14 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         setError(json.error ?? `Request failed (${res.status})`);
+        toast("Couldn't save campaign", { kind: "error", action: { label: "Retry", onClick: () => void save() } });
         return;
       }
+      toast(existing ? "Campaign updated" : "Campaign saved");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      toast("Couldn't save campaign", { kind: "error", action: { label: "Retry", onClick: () => void save() } });
     } finally {
       setPending(false);
     }
@@ -203,7 +212,11 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
           "Save campaign"
         )}
       </button>
-      {error ? <div className="error-box">{error}</div> : null}
+      {error ? (
+        <div className="error-box" role="alert">
+          Couldn&rsquo;t save this campaign: {error}
+        </div>
+      ) : null}
     </form>
   );
 }

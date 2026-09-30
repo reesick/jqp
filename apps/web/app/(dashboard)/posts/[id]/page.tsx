@@ -47,7 +47,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
             <span className="mono">{post.folder_path}</span>
           </div>
         </div>
-        <div>
+        <div className="page-actions">
           {post.status === "DISCOVERED" ? (
             <ActionButton href={`/api/posts/${post.id}/publish`} label="Publish" icon={<Rocket size={14} />} />
           ) : null}
@@ -55,12 +55,20 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      {post.error_message ? <div className="error-box">{post.error_message}</div> : null}
+      {post.error_message ? (
+        <div className="error-box" role="alert">
+          {failed ? "Publishing failed: " : ""}
+          {post.error_message}
+          {failed ? " Fix the cause if it is in the folder or caption, then use Retry." : ""}
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card-title">Pipeline progress</div>
         {post.status === "PUBLISHED" && post.instagram_media_id ? (
-          <p className="muted mono u-mt-sm">Instagram Media ID: {post.instagram_media_id}</p>
+          <p className="muted u-mt-sm">
+            Instagram media ID: <span className="mono">{post.instagram_media_id}</span>
+          </p>
         ) : null}
         <ul className="timeline">
           {STEP_ORDER.map((step, i) => (
@@ -92,9 +100,9 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
           <tbody>
             {media.map((m) => (
               <tr key={m.id}>
-                <td>{m.sequence}</td>
-                <td>{m.original_filename}</td>
-                <td>{m.public_url ? "✓" : "—"}</td>
+                <td className="mono">{m.sequence}</td>
+                <td className="mono">{m.original_filename}</td>
+                <td>{m.public_url ? "Yes" : "Not yet"}</td>
                 <td>
                   <StatusBadge status={m.container_status} dense />
                 </td>
@@ -105,26 +113,29 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <div className="card">
-        <div className="card-title">DM campaign</div>
+        <div className="card-title">Comment → DM automation</div>
         {campaign ? (
           <>
             <p>
               Keywords: <span className="mono">{campaign.trigger_keywords.join(", ") || "(any word)"}</span>
             </p>
             <p className="entity-meta u-mt-xxs u-align-center">
-              <StatusBadge status={campaign.enabled ? "PUBLISHED" : "DISCOVERED"} />
-              {campaign.enabled ? "enabled" : "disabled"}
+              <StatusBadge status={campaign.enabled ? "RUNNING" : "PAUSED"} />
               <span className="muted">·</span>
-              sync <StatusBadge status={campaign.sync_status} />
+              DM engine sync <StatusBadge status={campaign.sync_status} />
             </p>
-            {campaign.sync_error ? <div className="error-box">{campaign.sync_error}</div> : null}
+            {campaign.sync_error ? (
+              <div className="error-box" role="alert">
+                Couldn&rsquo;t sync to the DM engine: {campaign.sync_error}. Saving the automation again retries the sync.
+              </div>
+            ) : null}
             <p className="u-mt-xs">
-              <Link href={`/campaigns?postId=${post.id}`}>Edit campaign &rarr;</Link>
+              <Link href={`/campaigns?postId=${post.id}`}>Edit automation &rarr;</Link>
             </p>
           </>
         ) : (
           <p className="muted">
-            No campaign configured yet. <Link href={`/campaigns?postId=${post.id}`}>Create one &rarr;</Link>
+            No automation yet. Turn comments on this post into DMs. <Link href={`/campaigns?postId=${post.id}`}>Create one &rarr;</Link>
           </p>
         )}
       </div>

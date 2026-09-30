@@ -2,10 +2,10 @@ import Link from "next/link";
 import { getDmLogs } from "@jqp/publisher";
 import { StatusBadge } from "../../components/status-badge";
 import { EmptyState } from "../../components/empty-state";
-import { Send, Inbox } from "../../components/icons";
+import { CheckCircle2, Inbox } from "../../components/icons";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "DM Activity" };
+export const metadata = { title: "Activity" };
 
 const PAGE_SIZE = 20;
 const STATUS_FILTERS = ["SENT", "FAILED", "PENDING"];
@@ -29,27 +29,30 @@ export default async function DmActivityPage({
   return (
     <>
       <div className="page-header">
-        <div>
-          <span className="eyebrow">
-            <Send size={12} /> DM automation
-          </span>
-          <h1>DM Activity</h1>
-        </div>
+        <h1>Activity</h1>
       </div>
 
-      <div className="filter-row u-mb-md">
-        <Link href={filterHref()} className={status ? "muted" : undefined}>
+      <nav className="filter-row u-mb-md" aria-label="Filter by status">
+        <Link href={filterHref()} className={status ? "muted" : undefined} aria-current={status ? undefined : "true"}>
           All
         </Link>
         {STATUS_FILTERS.map((s) => (
-          <Link key={s} href={filterHref(s)} className={status === s ? undefined : "muted"}>
+          <Link key={s} href={filterHref(s)} className={status === s ? undefined : "muted"} aria-current={status === s ? "true" : undefined}>
             {s.charAt(0) + s.slice(1).toLowerCase()}
           </Link>
         ))}
-      </div>
+      </nav>
 
       {rows.length === 0 ? (
-        <EmptyState icon={<Inbox size={28} />} title="No DM activity yet. Comments matching a live campaign will show up here." />
+        status === "FAILED" ? (
+          <EmptyState icon={<CheckCircle2 size={24} />} title="No issues detected." />
+        ) : (
+          <EmptyState
+            icon={<Inbox size={24} />}
+            title={status ? `No ${status.toLowerCase()} DMs.` : "No DM activity yet."}
+            hint="When a comment matches a live automation, the DM shows up here."
+          />
+        )
       ) : (
         rows.map((dm) => (
           <div className="entity-card" key={dm.id}>
@@ -57,8 +60,8 @@ export default async function DmActivityPage({
               <div className="entity-title">{dm.commenterName ?? "someone"}</div>
               <div className="entity-meta">
                 <span className="mono">{dm.commentText}</span>
-                {dm.matchedKeyword ? <span>matched "{dm.matchedKeyword}"</span> : null}
-                <span>{new Date(dm.dmSentAt ?? dm.createdAt).toLocaleString()}</span>
+                {dm.matchedKeyword ? <span>matched &ldquo;{dm.matchedKeyword}&rdquo;</span> : null}
+                <span className="mono">{new Date(dm.dmSentAt ?? dm.createdAt).toLocaleString()}</span>
               </div>
             </div>
             <StatusBadge status={dm.status} />

@@ -2,14 +2,22 @@
 
 export default function ErrorBoundary({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <div className="card" style={{ maxWidth: 480, margin: "80px auto" }}>
-      <h1>Something went wrong</h1>
+    <main className="error-panel">
+      <h1>This page couldn&rsquo;t load</h1>
       <p className="muted">
-        This is usually a database or network blip — Supabase pausing, a connection hiccup, that kind of thing. Your
-        posts and campaigns are almost certainly fine; this page just couldn&apos;t load them.
+        This is usually a database or network blip, such as Supabase pausing or a dropped connection. Your posts and
+        automations are almost certainly fine; the page just couldn&rsquo;t fetch them. Try again in a few seconds.
       </p>
-      <div className="error-box">{error.message || "Unknown error"}</div>
+      <div className="error-box" role="alert">
+        {error.message || "Unknown error"}
+        {error.digest ? (
+          <>
+            {" "}
+            <span className="mono">ref {error.digest}</span>
+          </>
+        ) : null}
+      </div>
       <button onClick={() => reset()}>Try again</button>
-    </div>
+    </main>
   );
 }

@@ -1,6 +1,6 @@
 import { listIgAccounts, getTokenHealth } from "@jqp/publisher";
 import { loadEnv } from "@jqp/core";
-import { Settings as SettingsIcon, Link2, AlertTriangle } from "../../components/icons";
+import { Link2, AlertTriangle, CheckCircle2 } from "../../components/icons";
 import { InstagramGlyph } from "../../components/instagram-glyph";
 
 export const dynamic = "force-dynamic";
@@ -14,21 +14,25 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <div className="page-header">
-        <div>
-          <span className="eyebrow">
-            <SettingsIcon size={12} /> Configuration
-          </span>
-          <h1>Settings</h1>
-        </div>
+        <h1>Settings</h1>
       </div>
 
-      {params.connected ? <div className="card">Connected @{params.connected}.</div> : null}
-      {params.oauth_error ? <div className="error-box">Connection failed: {params.oauth_error}</div> : null}
+      {params.connected ? (
+        <p className="home-status" role="status">
+          <CheckCircle2 size={14} /> Connected @{params.connected}
+        </p>
+      ) : null}
+      {params.oauth_error ? (
+        <div className="error-box" role="alert">
+          Couldn&rsquo;t connect Instagram: {params.oauth_error}. Try Connect Instagram again; if it keeps failing, check
+          the Meta app&rsquo;s redirect URI and tester roles.
+        </div>
+      ) : null}
 
       {tokenHealth.expiring.length > 0 || tokenHealth.lastRefreshError ? (
-        <div className="error-box">
+        <div className="error-box" role="alert">
           <strong>
-            <AlertTriangle size={13} /> Instagram token needs attention
+            <AlertTriangle size={13} aria-hidden="true" /> Instagram token needs attention
           </strong>
           {tokenHealth.expiring.map((a) => (
             <div key={a.instagramId}>
@@ -53,7 +57,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <div className="card">
         <div className="card-title">Instagram accounts</div>
         {accounts.length === 0 ? (
-          <p className="muted u-text-sm">No account connected yet.</p>
+          <p className="muted u-text-sm">No account connected yet. Connect one to publish and to run DM automations.</p>
         ) : (
           accounts.map((a) => (
             <div className="entity-card" key={a.id}>
@@ -61,7 +65,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 <div className="entity-title">@{a.username ?? "—"}</div>
                 <div className="entity-meta">
                   <span className="mono">{a.ig_user_id}</span>
-                  <span>Token expires {a.token_expires_at ? new Date(a.token_expires_at).toLocaleString() : "—"}</span>
+                  <span>
+                    Token expires{" "}
+                    <span className="mono">{a.token_expires_at ? new Date(a.token_expires_at).toLocaleString() : "unknown"}</span>
+                  </span>
                 </div>
               </div>
               <span className={`badge ${a.is_active ? "ok" : "err"}`}>
@@ -82,7 +89,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <div className="card">
         <div className="card-title">OpenReply (DM engine)</div>
         <p className="muted u-text-sm">
-          Campaigns and DM activity are managed right here. Live conversation replies, content analytics, and queue
+          Automations and activity are managed right here. Live conversation replies, content analytics, and queue
           diagnostics are still handled in OpenReply's own dashboard.
         </p>
         <a href={env.OPENREPLY_DASHBOARD_URL} target="_blank" rel="noreferrer">
@@ -96,7 +103,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <div className="card">
         <div className="card-title">API status</div>
         <p>
-          <a href="/api/health">/api/health</a>
+          <a href="/api/health" className="mono">
+            /api/health
+          </a>
         </p>
       </div>
     </>
