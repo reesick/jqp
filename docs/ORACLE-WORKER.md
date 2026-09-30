@@ -219,7 +219,7 @@ cd ~/jqp && git pull && cd vendor/openreply && npm install && npm run db:generat
 |---|---|
 | Comment → DM | Automatic, 24/7, on this VM |
 | Publish a post | Local: `cd /d/jqp && npx tsx --env-file=.env apps/worker/src/index.ts`, then ingest + publish from the dashboard |
-| Manage campaigns | https://jqp-web-89h2-wheat.vercel.app |
+| Manage campaigns | https://jqp-web-tau.vercel.app |
 | DM logs / inbox | https://jqp-openreply-1.vercel.app |
 
 One consequence of publishing being local: `sync-campaign-to-openreply` and the retention purge also live in `apps/worker`. They only run while the local worker is up. A campaign stuck at `DM_SYNC_PENDING` just means you haven't run the local worker since enabling it — start it and it'll go through.

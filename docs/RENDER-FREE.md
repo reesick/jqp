@@ -34,7 +34,7 @@ Docker is required here because `sharp` ships native binaries that must match th
 
 ```
 NODE_ENV=production
-APP_BASE_URL=https://jqp-web-89h2-wheat.vercel.app
+APP_BASE_URL=https://jqp-web-tau.vercel.app
 DASHBOARD_SHARED_SECRET=<same as Vercel>
 SUPABASE_URL=<same as Vercel>
 SUPABASE_SERVICE_ROLE_KEY=<same as Vercel>
@@ -46,7 +46,7 @@ META_GRAPH_VERSION=v26.0
 META_API_BASE=https://graph.instagram.com
 META_IG_USER_ID=<same as Vercel>
 META_LONG_LIVED_ACCESS_TOKEN=<same as Vercel>
-META_OAUTH_REDIRECT_URI=https://jqp-web-89h2-wheat.vercel.app/api/meta/oauth/callback
+META_OAUTH_REDIRECT_URI=https://jqp-web-tau.vercel.app/api/meta/oauth/callback
 META_WEBHOOK_VERIFY_TOKEN=<same as Vercel>
 ENCRYPTION_KEY=<same as Vercel — must match, or stored tokens can't be decrypted>
 BRIDGE_SHARED_SECRET=<same as Vercel>

@@ -29,7 +29,7 @@ It **cannot** be. `stepValidate` and `stepUpload` in `packages/publisher/src/pip
 
 Only the DM worker genuinely needs 24/7 hosting, because a comment can arrive at any time and the reply has to go out inside Meta's messaging window.
 
-Knock-on effect: `sync-campaign-to-openreply` and the retention purge also run in `apps/worker`, so they only fire while the local worker is up. A campaign stuck at `DM_SYNC_PENDING` just means the local worker hasn't run since it was enabled.
+Knock-on effect: `sync-campaign-to-openreply` also runs in `apps/worker`, so it only fires while the local worker is up. The retention purge additionally runs from the cloud (`/api/cron/purge`) once `MONITOR_TOKEN` and the GitHub Actions variables are set. A campaign stuck at `DM_SYNC_PENDING` just means the local worker hasn't run since it was enabled.
 
 ## Database — use the pooler, not the direct host
 

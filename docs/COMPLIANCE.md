@@ -65,7 +65,7 @@ Do **not** use `GET /${META_GRAPH_VERSION}/{app-id}/subscriptions` with an app t
 
 ## Data retention
 
-Implemented in `packages/publisher/src/retention.ts`, scheduled daily at 04:00 UTC by `apps/worker`.
+Implemented in `packages/publisher/src/retention.ts`, scheduled daily at 04:00 UTC by `apps/worker` (only while that local worker is running) and, once `MONITOR_TOKEN` is configured, also by `POST /api/cron/purge` from the GitHub Actions workflow at 04:30 UTC, which does not depend on your computer being on. The comment-text gap for rows whose name was already null is fixed.
 
 | Data | Treatment | Default | Env |
 |---|---|---|---|

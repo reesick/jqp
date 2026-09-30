@@ -33,8 +33,8 @@ Deliberately NOT wired into the Vercel build. With one shared database the schem
 2. **Root Directory**: `apps/web`
 3. Framework preset: Next.js (auto-detected)
 4. Environment variables: every key from `.env.example` except the `MOCK_META*` ones (leave `MOCK_META=false`) — see that file's comments for where each value comes from.
-5. Deploy. Note the assigned domain (`jqp-web-89h2-wheat.vercel.app`) — this becomes `APP_BASE_URL` and `META_OAUTH_REDIRECT_URI`'s base. Update those two env vars to the real domain and redeploy.
-6. Update the Meta app's OAuth redirect URI (`docs/SETUP.md` §2 Step 4) to `https://jqp-web-89h2-wheat.vercel.app/api/meta/oauth/callback`.
+5. Deploy. Note the assigned domain (production is currently `jqp-web-tau.vercel.app`) — this becomes `APP_BASE_URL` and `META_OAUTH_REDIRECT_URI`'s base. Update those two env vars to the real domain and redeploy.
+6. Update the Meta app's OAuth redirect URI (`docs/SETUP.md` §2 Step 4) to `https://jqp-web-tau.vercel.app/api/meta/oauth/callback`.
 
 ## 3. Our worker → Render
 
@@ -73,7 +73,7 @@ Second service in the same `render.yaml`, `openreply-worker`:
 - [ ] Meta app **published** (Live, not Development) — see `docs/SETUP.md` §2 Step 7
 - [ ] `messaging_postbacks` webhook field subscribed, and **verified via the Graph API** rather than the console UI (the console has shown "Subscribed" while the API returned an empty array) — required for the button-gated DM flow; see `docs/COMPLIANCE.md`
 - [ ] All five requested OAuth scopes justified in the App Review submission — `vendor/openreply/META_APP_REVIEW.md` documents only three, and requesting an unjustified scope is a straightforward rejection; see `docs/COMPLIANCE.md`
-- [ ] Retention purge confirmed running (worker logs `purge_schedule_registered` at boot, `purge_completed` daily)
+- [ ] Retention purge confirmed running (worker logs `purge_schedule_registered` at boot, `purge_completed` daily; and a `retention_run_completed` row in `system_events` from the cloud run)
 - [ ] OAuth redirect URI matches the real Vercel domain exactly
 - [ ] Webhook callback URL points at OpenReply's real domain, subscribed to `comments`
 - [ ] Test comment → DM round-trip works end to end on a real (non-tester) account, or App Review is in progress for Advanced Access

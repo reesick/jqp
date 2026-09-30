@@ -322,12 +322,12 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 
 ## 10. Security notes
 
-- Dashboard auth is one shared secret (`DASHBOARD_SHARED_SECRET`) in an httpOnly cookie holding `sha256(secret)`, enforced in `apps/web/middleware.ts`. Public paths: `/login`, `/api/auth/login`, `/api/health`. This is a single-operator tool, not multi-user.
+- Dashboard auth is one shared secret (`DASHBOARD_SHARED_SECRET`) in an httpOnly cookie holding a signed, expiring token (`v1.<expiry>.<HMAC>`, 7 days), enforced in `apps/web/middleware.ts`. Rotating the secret ends every session. Public paths: `/login`, `/api/auth/login`, `/api/health`; `/api/cron/*` is open to the middleware but each route requires the `MONITOR_TOKEN` bearer token and refuses everything when it is unset. This is a single-operator tool, not multi-user.
 - `POST /api/posts` accepts a filesystem path (authenticated only). Do not share the dashboard with anyone you would not give disk read access to.
 - Instagram tokens are stored AES-256-GCM encrypted (`ENCRYPTION_KEY`). Never expose `SUPABASE_SERVICE_ROLE_KEY` or `META_APP_SECRET` to a browser; there are no `NEXT_PUBLIC_*` variables.
 - Generate fresh production secrets; do not reuse local ones. OpenReply's `ENCRYPTION_KEY` is a different value from ours.
 - Supabase public-schema API roles are locked down by `0006_lockdown_public_api_roles.sql`; re-verify with the command in `docs/PRODUCTION.md` section 1.
-- Retention: raw webhook payloads 30 days, commenter PII 90 days (`docs/COMPLIANCE.md`).
+- Retention: raw webhook payloads 30 days, commenter PII 90 days (`docs/COMPLIANCE.md`). The purge runs daily from `POST /api/cron/purge` (scheduled by `.github/workflows/monitor.yml` once `MONITOR_TOKEN` is configured) and also from the local worker when it is up.
 - An independent audit is tracked in `docs/SECURITY-AUDIT.md` when present.
 - Never paste `.env` contents into chats or tickets.
 
