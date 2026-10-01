@@ -347,6 +347,8 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 | `docs/DATA-PROTECTION.md` | What personal data is held, Meta data obligations, scale review, open gaps |
 | `docs/SECURITY-AUDIT.md` | Independent security audit and what was fixed |
 | `docs/RATE-LIMITS.md` | Meta's limits, what the code does when throttled, known gaps |
+| `docs/AUDIT-2026-10-01.md` | Latest audit summary and the action list, in priority order |
+| `docs/REMOTE-ACCESS-PLAN.md` | Plan for operating the system from outside the laptop (not built yet) |
 | `docs/MONITORING.md` | The System page, error recording, alerts, scale notes |
 | `docs/CLAUDE-CODE.md` | Driving the system from Claude Code (MCP tools, safety, prompts) |
 | `docs/MORNING-CHECKLIST.md` | What only the owner can do next, in priority order |

@@ -1,5 +1,7 @@
 # Where things stand, and what is left
 
+> Read `docs/AUDIT-2026-10-01.md` first: it has the latest audit results and a prioritised action list. Database connections now go through the transaction pooler for OpenReply (port 6543) after an outage on 2026-10-01; do not point OpenReply back at port 5432.
+
 Updated 2026-10-01 after the production fixes. `npm run doctor` (inside view) and `npm run smoke` (live site) verify everything below.
 
 ## Fixed and verified
