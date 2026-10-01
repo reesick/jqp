@@ -257,6 +257,8 @@ Labels are being renamed (Home, Posts, Automations, Activity, Settings) on branc
 | `npm run doctor` | Integration check: schema, migrations, Meta token and webhook subscription, OpenReply account, storage, Redis (read-only, prints no secrets) |
 | `npm run smoke` | Live test of the deployed site: real login, every page, webhook, security controls |
 | `npm run check-redis` | Host, TLS and PING for the DM queue's Redis (never prints the password) |
+| `npm run set-redis` / `set-database-url` | Replace a connection string everywhere from your clipboard, after proving it works (`-- --vercel` also updates Vercel) |
+| `npm run dm-worker` | Run OpenReply's DM worker on this computer. Sends real DMs; see the warning in `scripts/run-dm-worker.cjs` |
 | `npm run mcp:selftest` | Start the Claude Code server and exercise its tools |
 | `npm run migrate` | Apply Supabase migrations (ledgered, re-runnable) |
 | `npm run ingest -- "<folder>"` | Register a post folder |
@@ -344,6 +346,7 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 | `docs/COMPLIANCE.md` | Meta rules, webhook fields, scopes, retention |
 | `docs/DATA-PROTECTION.md` | What personal data is held, Meta data obligations, scale review, open gaps |
 | `docs/SECURITY-AUDIT.md` | Independent security audit and what was fixed |
+| `docs/RATE-LIMITS.md` | Meta's limits, what the code does when throttled, known gaps |
 | `docs/MONITORING.md` | The System page, error recording, alerts, scale notes |
 | `docs/CLAUDE-CODE.md` | Driving the system from Claude Code (MCP tools, safety, prompts) |
 | `docs/MORNING-CHECKLIST.md` | What only the owner can do next, in priority order |

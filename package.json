@@ -35,7 +35,8 @@
     "mcp:selftest": "tsx scripts/mcp-selftest.ts",
     "mcp": "node --import tsx apps/mcp/src/index.ts",
     "set-redis": "tsx scripts/set-redis.ts",
-    "set-database-url": "tsx scripts/set-database-url.ts"
+    "set-database-url": "tsx scripts/set-database-url.ts",
+    "dm-worker": "node scripts/run-dm-worker.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

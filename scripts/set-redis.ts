@@ -20,12 +20,16 @@
  */
 import { lookup } from "node:dns/promises";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parse } from "dotenv";
 import { fail, readClipboard, updateLocalFiles, updateVercel, type FileTarget, type VercelTarget } from "./lib/env-update.js";
 
 const args = process.argv.slice(2);
 const withVercel = args.includes("--vercel");
 const urlFlag = args.indexOf("--url");
+// --from-local reuses the URL already written to vendor/openreply/.env (and verified) so it never has to be typed or pasted again.
+const fromLocal = args.includes("--from-local");
 
 const FILES: FileTarget[] = [
   { path: "vendor/openreply/.env", key: "REDIS_URL" },
@@ -37,7 +41,10 @@ const VERCEL_TARGETS: VercelTarget[] = [
 ];
 
 async function main(): Promise<void> {
-  const raw = (urlFlag >= 0 ? args[urlFlag + 1] ?? "" : readClipboard()).trim();
+  const localFile = resolve(process.cwd(), "vendor/openreply/.env");
+  const local = fromLocal && existsSync(localFile) ? parse(readFileSync(localFile))["REDIS_URL"] ?? "" : "";
+  if (fromLocal && !local) fail("--from-local: no REDIS_URL found in vendor/openreply/.env.");
+  const raw = (fromLocal ? local : urlFlag >= 0 ? args[urlFlag + 1] ?? "" : readClipboard()).trim();
   if (!raw) fail("No URL found. Copy the connection URL from the Upstash console first.");
 
   let url: URL;

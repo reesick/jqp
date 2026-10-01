@@ -1,75 +1,39 @@
-# Morning checklist
+# Where things stand, and what is left
 
-What is left that only the account owner can do, in order of importance. Everything in code that could be done safely without you has been done; these need your logins or a decision.
+Updated 2026-10-01 after the production fixes. `npm run doctor` (inside view) and `npm run smoke` (live site) verify everything below.
 
-After each step, `npm run doctor` tells you whether it worked. `npm run smoke` checks the deployed site from outside.
+## Fixed and verified
 
-## Blocking: nothing sends DMs or posts until these are fixed
+| Item | State |
+|---|---|
+| Dashboard on Vercel (`jqp-web-tau`) | Healthy, database connected, new password applied |
+| Supabase password | Changed on both Vercel projects and in both local `.env` files; redeployed |
+| Redis (DM queue) | New Redis Cloud database; OpenReply reports database, Redis and queue **ok** |
+| Meta token and app | Valid for @anveya.d; webhook subscribed to `comments` and `messaging_postbacks` |
+| Instagram account inside OpenReply | Connected (@anveya.d); 2 campaigns synced to 2 active automations |
+| Security, monitoring, Claude Code server, docs | Shipped (see `docs/SECURITY-AUDIT.md`, `docs/MONITORING.md`, `docs/CLAUDE-CODE.md`) |
+| Rate limits | Throttle handling shipped (`docs/RATE-LIMITS.md`) |
 
-### 1. Replace the dead Redis (DMs are down)
-Upstash database `joint-civet-121910` no longer exists (its hostname does not resolve). OpenReply cannot queue a single DM without Redis.
+## Blocking: DMs are received but nothing sends them
 
-1. Sign in at console.upstash.com (try each login: Google, GitHub, email) and look for that database. If it is gone on every account, create a new Redis database. Choose the region closest to Mumbai.
-2. **Use a paid plan for this workload.** The free tier allows 500K commands per month. BullMQ polls Redis even when idle, and the review estimated 0.6 to 1.5M per month before any traffic. Pay-as-you-go is $0.2 per 100K commands; the $10 fixed plan is the predictable option. (Estimate, not measured: watch the Upstash usage graph for a week.)
-3. Copy the `rediss://…` connection URL and set it everywhere the old one was used:
-   - `vendor/openreply/.env` → `REDIS_URL`
-   - root `.env` → `OPENREPLY_REDIS_URL`
-   - Vercel project `jqp-openreply-1` → `REDIS_URL` (Production), then redeploy
-   - Vercel project `jqp-web` → `OPENREPLY_REDIS_URL` (kept for consistency)
-   - the DM worker host (Render or the Oracle VM) → `REDIS_URL`, then restart it
-4. Run `npm run check-redis` (prints only host/port, never the password).
+**No DM worker is running.** OpenReply's health shows `worker: healthy: false`. Comments will be accepted and queued in Redis, and they wait there. Pick one:
 
-### 2. Meta says "API access blocked" (posting is blocked)
-Every call to `graph.instagram.com` with the publishing token returns error code 200, "API access blocked", on every API version, including the token refresh call. Because refresh fails too, this points at the Meta **app**, not just the token.
-
-1. Open developers.facebook.com → your app. Look for a red banner, an Alerts or Notifications item, a "Restricted" app status, or a message under Settings → Advanced.
-2. Confirm the app is in the state you expect (Development or Live), that the **Instagram API with Instagram Login** product is still added, and that your Instagram account still has a role on the app.
-3. If there is no restriction, generate a fresh token through the app's Instagram login flow and put it in `META_LONG_LIVED_ACCESS_TOKEN` (root `.env` and Vercel `jqp-web`).
-4. Run `npm run doctor`. The Meta section should turn green.
-
-I could not determine the exact cause from here. Do not guess; the dashboard banner will say.
-
-### 3. Database password is stale on your machine
-`npm run doctor` fails to log in to the database from this computer: "password authentication failed". Vercel works, so its copy is right and the local copies are old.
-
-1. Supabase dashboard → Project Settings → Database → copy the **session pooler** connection string (port 5432; user looks like `postgres.<project-ref>`).
-2. Put it in root `.env` → `DATABASE_URL` and `vendor/openreply/.env` → `DATABASE_URL`.
-3. Also update `DATABASE_URL` on the DM worker host, and `jqp-openreply-1` on Vercel if you reset the password recently.
-
-This breaks the local publish worker, the MCP server for Claude Code, and `npm run doctor` until fixed.
-
-### 4. Connect the Instagram account inside OpenReply
-Campaigns are copied into OpenReply's database, and that needs an Instagram account connected **in OpenReply's own dashboard** (separate from the jqp dashboard's Connect button). `npm run doctor` reports if none exists. Its redirect URI is `/api/instagram/callback` on the OpenReply domain; add it in the Meta app settings first.
-
-After connecting, subscribe the account to webhooks for `comments` and `messaging_postbacks` (postbacks must be added through the API; see `docs/ADD-ACCOUNT.md`).
+- **Quick test, this computer only:** `npm run dm-worker`. Works only while the computer is on. **It sends real DMs**, and it also polls Meta every 5 minutes looking back 72 hours, so it will message anyone who commented a trigger word on a post with an active automation in the last 3 days and has not been messaged. To limit that on first start, add `COMMENT_POLL_LOOKBACK_HOURS=1` to `vendor/openreply/.env` first.
+- **Always on:** follow `docs/ORACLE-WORKER.md` (free Oracle VM) or `docs/RENDER-FREE.md`. Give it the same `REDIS_URL` and `DATABASE_URL` that are now in `vendor/openreply/.env`. Check `npm run smoke`: the line "DM worker heartbeat" turns green when it works.
 
 ## Do next
 
-### 5. Apply migration 0008 (monitoring tables and DM indexes)
-Supabase dashboard → SQL Editor → paste `supabase/migrations/0008_system_events.sql` → Run. The code works without it (it skips recording), but the System page loses its error history and alert state until it is applied. (Migration 0007, closing the media bucket listing, is already applied and verified.)
+1. **Apply migration `0008`** in the Supabase SQL editor (`supabase/migrations/0008_system_events.sql`). Adds the error log, alert state and DM-log indexes. The code works without it, but the System page has no history and alerts stay off until it is applied.
+2. **Turn on alerts:** set `MONITOR_TOKEN`, `ALERT_EMAIL_TO`, `ALERT_RESEND_API_KEY`, `ALERT_EMAIL_FROM` on Vercel `jqp-web`; add the GitHub secret `MONITOR_TOKEN` and variable `MONITOR_URL` (see `docs/MONITORING.md`). This also runs data retention from the cloud.
+3. **Security:** set a dedicated random `CRON_SECRET` on `jqp-openreply-1`. Rotate the Supabase database password again at the end, because it was shared in a chat during setup (`npm run set-database-url -- --vercel`, then redeploy and update the DM worker). Same for the Redis password (`npm run set-redis -- --vercel`).
+4. **Redis connection is not encrypted** (`redis://`). The queue carries DM job data. Look for a TLS option in the Redis Cloud console, or move to a plan or provider with TLS. Also set the eviction policy to `noeviction` there (BullMQ needs it).
+5. **Retire the duplicate Vercel projects** `jqp-web-89h2` and `jqp-openreply` once nothing points at them.
 
-### 6. Turn on alerts
-1. Generate a token: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
-2. Vercel `jqp-web` environment: `MONITOR_TOKEN` (that token), `ALERT_EMAIL_TO` (your email), `ALERT_RESEND_API_KEY`, `ALERT_EMAIL_FROM` (a sender on a domain verified in Resend). Redeploy.
-3. GitHub repo → Settings → Secrets and variables → Actions: secret `MONITOR_TOKEN` (same value), variable `MONITOR_URL` = `https://jqp-web-tau.vercel.app`.
-4. Actions tab → "monitor" → Run workflow once. The System page (Ctrl+K → "System") should show fresh checks.
+## Known gaps (decided or too large for now)
 
-This also runs the data-retention purge daily from the cloud, so it no longer depends on your PC being on.
-
-### 7. Security hygiene
-- Set a dedicated random `CRON_SECRET` on Vercel `jqp-openreply-1`. Without it, OpenReply's cron routes accept `Bearer undefined`.
-- Rotate `DASHBOARD_SHARED_SECRET` to 32+ random characters (you will be logged out once).
-- Retire the duplicate Vercel projects `jqp-web-89h2` and `jqp-openreply` once nothing points at them. Meta's webhook and redirect URIs must point at the ones you keep.
-
-### 8. Plug it into Claude Code
-See `docs/CLAUDE-CODE.md`. The short version: open this folder in Claude Code, approve the `jqp` server when asked, and say "check system health".
-
-## Known gaps (not fixed, by decision or because they need a bigger change)
-
-From `docs/DATA-PROTECTION.md`, the items that matter before scaling past a few hundred DMs a day:
-- **No per-person erasure path.** OpenReply's `/data-deletion` page is informational only. Meta's terms expect a clearly marked way to request deletion. A SQL procedure is outlined in the document; a real endpoint is not built.
-- **Bursts can lose comments.** The rate limiter is a fixed window; after 3 requeues a comment is marked skipped and never answered.
-- **No opt-out handling** was found in OpenReply.
-- **Publishing still uses one token from an env var**, and nothing refreshes it every 60 days. Multi-account needs the pipeline to read `ig_accounts`.
-- **`sharp` has two high advisories**; fixing it is a breaking upgrade in the publish path.
-- **CSP header** is not shipped (needs testing on a preview).
+From `docs/DATA-PROTECTION.md` and `docs/RATE-LIMITS.md`:
+- No per-person data-erasure path (Meta's terms expect one).
+- A very large burst could leave comments unanswered (OpenReply's limiter).
+- Publishing uses one token from an env var that nothing refreshes every 60 days; multi-account needs the pipeline to read `ig_accounts`.
+- No post scheduler.
+- Two `sharp` advisories remain (fix is a breaking upgrade in the publish path); no CSP header yet.

@@ -72,6 +72,11 @@ export function updateVercel(value: string, targets: VercelTarget[]): void {
       console.log(`${ok ? "✓" : "✗"} ${t.project}: ${t.key} ${ok ? "set for production" : `FAILED (${(add.stderr || add.stdout).trim().split("\n").pop()}). Set it by hand`}`);
     }
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    // Windows can keep the folder locked for a moment after `vercel` exits; a leftover temp dir is harmless.
+    try {
+      rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* ignore */
+    }
   }
 }
