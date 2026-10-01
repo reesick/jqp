@@ -22,3 +22,6 @@ posts/**/*.png
 # root for testing, not application code — already uploaded to
 # Supabase storage once ingested, no need to keep a local git copy).
 /combined-gptimage2-high-01to10/
+
+# Local database snapshots (contain personal data and encrypted tokens)
+backups/

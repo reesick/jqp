@@ -38,7 +38,8 @@
     "set-database-url": "tsx scripts/set-database-url.ts",
     "dm-worker": "node scripts/run-dm-worker.cjs",
     "set-env": "tsx scripts/set-env.ts",
-    "test-email": "tsx scripts/test-email.ts"
+    "test-email": "tsx scripts/test-email.ts",
+    "backup": "tsx scripts/backup-db.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

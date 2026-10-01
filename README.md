@@ -259,6 +259,7 @@ Labels are being renamed (Home, Posts, Automations, Activity, Settings) on branc
 | `npm run check-redis` | Host, TLS and PING for the DM queue's Redis (never prints the password) |
 | `npm run set-redis` / `set-database-url` | Replace a connection string everywhere from your clipboard, after proving it works (`-- --vercel` also updates Vercel) |
 | `npm run dm-worker` | Run OpenReply's DM worker on this computer. Sends real DMs; see the warning in `scripts/run-dm-worker.cjs` |
+| `npm run backup` | Local read-only snapshot of every table (git-ignored; contains personal data) |
 | `npm run mcp:selftest` | Start the Claude Code server and exercise its tools |
 | `npm run migrate` | Apply Supabase migrations (ledgered, re-runnable) |
 | `npm run ingest -- "<folder>"` | Register a post folder |
@@ -347,6 +348,8 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 | `docs/DATA-PROTECTION.md` | What personal data is held, Meta data obligations, scale review, open gaps |
 | `docs/SECURITY-AUDIT.md` | Independent security audit and what was fixed |
 | `docs/RATE-LIMITS.md` | Meta's limits, what the code does when throttled, known gaps |
+| `docs/CLAUDE-CONTENT-GUIDE.md` | Instructions for Claude: how to package a post, name files, write human copy, store text safely, verify, and recover |
+| `docs/RECOVERY.md` | Backups (`npm run backup`) and manual restore |
 | `docs/AUDIT-2026-10-01.md` | Latest audit summary and the action list, in priority order |
 | `docs/REMOTE-ACCESS-PLAN.md` | Plan for operating the system from outside the laptop (not built yet) |
 | `docs/MONITORING.md` | The System page, error recording, alerts, scale notes |

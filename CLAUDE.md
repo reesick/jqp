@@ -11,6 +11,9 @@ Instagram carousel publishing plus comment-to-DM automation, official Meta APIs 
 ## Layout
 `packages/*` shared libraries, `apps/web` dashboard (Next.js), `apps/worker` local publish worker, `apps/mcp` Claude Code server, `vendor/openreply` the DM engine, `supabase/migrations` SQL (applied by hand in the Supabase SQL editor), `scripts/` operational tools.
 
+## Preparing posts and campaigns
+Read `docs/CLAUDE-CONTENT-GUIDE.md` first: folder and image naming, caption and DM voice (no em dashes, no AI-sounding copy), how text must be stored, and the checklist to run after every change.
+
 ## Useful commands
 `npm run doctor` (inside check), `npm run smoke` (live site check), `npm run check-redis`, `npm run mcp:selftest`.
 
