@@ -54,6 +54,8 @@ export async function sendAlertEmail(subject: string, lines: string[]): Promise<
         host: smtpHost,
         port: env.ALERT_SMTP_PORT,
         secure: env.ALERT_SMTP_PORT === 465,
+        // Refuse to send credentials unless the connection is upgraded to TLS (STARTTLS is otherwise strippable).
+        requireTLS: env.ALERT_SMTP_PORT !== 465,
         auth: { user: env.ALERT_SMTP_USER, pass: env.ALERT_SMTP_PASS },
         connectionTimeout: 8000,
         greetingTimeout: 8000,
