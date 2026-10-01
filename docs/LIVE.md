@@ -67,6 +67,16 @@ Note the connection string differs from the direct one in **two** places, and th
 - Full account setup: `docs/ADD-ACCOUNT.md`
 - `messaging_seen` deliberately NOT subscribed — see `docs/COMPLIANCE.md`
 
+## OpenReply build command (changed 2026-10-02)
+
+The Vercel project `jqp-openreply-1` builds with `npx prisma generate && npx next build` (project setting, not a file in the repo). The default `npm run vercel-build` also ran `prisma migrate deploy`, which takes a database lock that **hangs through the transaction pooler** (port 6543, which OpenReply now uses at runtime). Every build then ran 45 minutes and was killed. Migrations are applied by hand when OpenReply adds one:
+
+```bash
+cd vendor/openreply
+# DATABASE_URL must be the SESSION pooler (port 5432) for this one command
+npx prisma migrate deploy
+```
+
 ## Prisma baseline (one-time, already done)
 
 OpenReply's 18 migrations were originally applied as raw SQL, so Prisma had no `_prisma_migrations` table and `migrate deploy` failed the build with **P3005** ("schema is not empty"). Baselined with:
