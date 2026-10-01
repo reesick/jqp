@@ -20,7 +20,13 @@ if (!existsSync(envFile)) {
   console.error("vendor/openreply/.env not found. Run: npm run sync-openreply-env");
   process.exit(1);
 }
-const env = { ...process.env, ...parse(readFileSync(envFile)) };
+// The file wins over the shell, except for the two polling knobs, which you can set per run:
+//   COMMENT_POLL_LOOKBACK_HOURS=1 npm run dm-worker      (only answer comments from the last hour)
+const overrides = {};
+for (const key of ["COMMENT_POLL_LOOKBACK_HOURS", "COMMENT_POLL_INTERVAL_MS"]) {
+  if (process.env[key]) overrides[key] = process.env[key];
+}
+const env = { ...process.env, ...parse(readFileSync(envFile)), ...overrides };
 if (!env.REDIS_URL || !env.DATABASE_URL) {
   console.error("REDIS_URL or DATABASE_URL is missing from vendor/openreply/.env.");
   process.exit(1);
