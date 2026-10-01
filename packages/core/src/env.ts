@@ -22,6 +22,9 @@ const envObjectSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional().default(""),
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "must be a postgres:// or postgresql:// connection string"),
   DB_POOL_MAX: z.coerce.number().int().positive().default(5),
+  // pg-boss keeps its own pool (library default 10). Supabase's session pooler allows only ~15 clients in total across
+  // every process, so keep this small; the publish worker and the web enqueue calls need very few.
+  BOSS_POOL_MAX: z.coerce.number().int().positive().default(3),
   SUPABASE_STORAGE_BUCKET: nonEmpty("SUPABASE_STORAGE_BUCKET").default("instagram-media"),
 
   META_APP_ID: nonEmpty("META_APP_ID"),

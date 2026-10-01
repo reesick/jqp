@@ -11,6 +11,7 @@
  * variable that should differ per target (e.g. a different name in each project),
  * run the command once per target.
  *
+ * Pass --copy-tx KEY to do the same for a Supabase pooler URL but switch it to the transaction pooler (port 6543).
  * Pass --copy KEY to take the value of KEY from the root env file instead of typing it.
  *
  * Local files are backed up next to themselves first (git-ignored). Values are
@@ -53,6 +54,16 @@ for (const key of collect("--copy")) {
   const value = existsSync(rootFile) ? parse(readFileSync(rootFile))[key] : undefined;
   if (!value) fail(`--copy ${key}: not found in the root env file.`);
   vars.set(key, value);
+}
+// --copy-tx KEY: like --copy, but rewrites a Supabase pooler URL to the transaction pooler (port 6543).
+for (const key of collect("--copy-tx")) {
+  const rootFile = resolve(process.cwd(), ".env");
+  const value = existsSync(rootFile) ? parse(readFileSync(rootFile))[key] : undefined;
+  if (!value) fail(`--copy-tx ${key}: not found in the root env file.`);
+  const u = new URL(value);
+  if (!u.hostname.endsWith(".pooler.supabase.com")) fail(`--copy-tx ${key}: not a Supabase pooler URL.`);
+  u.port = "6543";
+  vars.set(key, u.toString());
 }
 for (const key of collect("--generate")) {
   const token = randomBytes(32).toString("base64url");

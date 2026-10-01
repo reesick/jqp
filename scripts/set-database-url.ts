@@ -71,8 +71,19 @@ async function main(): Promise<void> {
     await sql.end({ timeout: 2 }).catch(() => undefined);
   }
 
-  updateLocalFiles(raw, FILES);
-  if (withVercel) updateVercel(raw, VERCEL);
+  // The dashboard / queue keep the session pooler (5432). OpenReply gets the transaction pooler (6543) so its many
+  // serverless instances cannot exhaust the session pooler's ~15 connection slots.
+  const openReplyUrl = (() => {
+    const u = new URL(raw);
+    if (u.hostname.endsWith(".pooler.supabase.com")) u.port = "6543";
+    return u.toString();
+  })();
+  updateLocalFiles(raw, FILES.filter((f) => f.path === ".env"));
+  updateLocalFiles(openReplyUrl, FILES.filter((f) => f.path !== ".env"));
+  if (withVercel) {
+    updateVercel(raw, VERCEL.filter((t) => t.project === "jqp-web"));
+    updateVercel(openReplyUrl, VERCEL.filter((t) => t.project !== "jqp-web"));
+  }
 
   console.log(`
 Still to do by hand:

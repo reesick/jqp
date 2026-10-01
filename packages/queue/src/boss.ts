@@ -15,7 +15,8 @@ export async function getBoss(): Promise<PgBoss> {
   const env = loadEnv();
   const boss = new PgBoss({
     connectionString: env.DATABASE_URL,
-    schema: "pgboss"
+    schema: "pgboss",
+    max: env.BOSS_POOL_MAX
   });
 
   boss.on("error", (err) => rootLogger.error("pgboss_error", { error: err }));
