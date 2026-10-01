@@ -33,7 +33,8 @@
     "check-redis": "tsx scripts/check-redis.ts",
     "doctor": "tsx scripts/doctor.ts",
     "mcp:selftest": "tsx scripts/mcp-selftest.ts",
-    "mcp": "node --import tsx apps/mcp/src/index.ts"
+    "mcp": "node --import tsx apps/mcp/src/index.ts",
+    "set-redis": "tsx scripts/set-redis.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
