@@ -350,6 +350,8 @@ Go-live checklist: `docs/DEPLOY.md` section 6 and `docs/PRODUCTION.md`.
 | `docs/RATE-LIMITS.md` | Meta's limits, what the code does when throttled, known gaps |
 | `docs/CLAUDE-CONTENT-GUIDE.md` | Instructions for Claude: how to package a post, name files, write human copy, store text safely, verify, and recover |
 | `docs/RECOVERY.md` | Backups (`npm run backup`) and manual restore |
+| `docs/REMEDIATION-PLAN.md` | What to fix, in order, and what is not worth fixing (merges all four audits) |
+| `docs/SYSTEM-AUDIT.md` | Reliability audit: double-post paths, silent failures, single points of failure |
 | `docs/AUDIT-2026-10-01.md` | Latest audit summary and the action list, in priority order |
 | `docs/REMOTE-ACCESS-PLAN.md` | Plan for operating the system from outside the laptop (not built yet) |
 | `docs/MONITORING.md` | The System page, error recording, alerts, scale notes |
