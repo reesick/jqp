@@ -18,40 +18,23 @@
  *   with --vercel:  jqp-openreply-1 REDIS_URL, jqp-web OPENREPLY_REDIS_URL (production)
  * What it cannot reach, and tells you about: the DM worker host (Render / Oracle VM).
  */
-import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { lookup } from "node:dns/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import { fail, readClipboard, updateLocalFiles, updateVercel, type FileTarget, type VercelTarget } from "./lib/env-update.js";
 
 const args = process.argv.slice(2);
 const withVercel = args.includes("--vercel");
 const urlFlag = args.indexOf("--url");
 
-const FILES = [
+const FILES: FileTarget[] = [
   { path: "vendor/openreply/.env", key: "REDIS_URL" },
   { path: ".env", key: "OPENREPLY_REDIS_URL" }
 ];
-const VERCEL_TARGETS = [
+const VERCEL_TARGETS: VercelTarget[] = [
   { project: "jqp-openreply-1", key: "REDIS_URL" },
   { project: "jqp-web", key: "OPENREPLY_REDIS_URL" }
 ];
-
-function fail(message: string): never {
-  console.error(`\n✗ ${message}\n`);
-  process.exit(1);
-}
-
-function readClipboard(): string {
-  try {
-    if (process.platform === "win32") return execFileSync("powershell", ["-NoProfile", "-Command", "Get-Clipboard -Raw"], { encoding: "utf8" });
-    if (process.platform === "darwin") return execFileSync("pbpaste", { encoding: "utf8" });
-    return execFileSync("xclip", ["-selection", "clipboard", "-o"], { encoding: "utf8" });
-  } catch {
-    fail("Could not read the clipboard. Copy the Upstash URL again and re-run, or pass --url (the value will then be visible in your shell history).");
-  }
-}
 
 async function main(): Promise<void> {
   const raw = (urlFlag >= 0 ? args[urlFlag + 1] ?? "" : readClipboard()).trim();
@@ -99,46 +82,8 @@ async function main(): Promise<void> {
   }
   console.log("✓ Connected, PING ok, test write ok.\n");
 
-  // Local files: back up, then replace (or append) the single variable.
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  for (const f of FILES) {
-    const full = resolve(process.cwd(), f.path);
-    if (!existsSync(full)) {
-      console.log(`- ${f.path}: not present, skipped`);
-      continue;
-    }
-    copyFileSync(full, `${full}.bak-redis-${stamp}`);
-    const original = readFileSync(full, "utf8");
-    const eol = original.includes("\r\n") ? "\r\n" : "\n";
-    const line = `${f.key}=${raw}`;
-    const pattern = new RegExp(`^${f.key}=.*$`, "m");
-    const updated = pattern.test(original) ? original.replace(pattern, () => line) : `${original.replace(/\s*$/, "")}${eol}${line}${eol}`;
-    writeFileSync(full, updated);
-    console.log(`✓ ${f.path}: ${f.key} updated (backup kept next to it)`);
-  }
-
-  if (withVercel) {
-    console.log("\nVercel (production):");
-    const work = mkdtempSync(join(tmpdir(), "jqp-redis-"));
-    try {
-      for (const t of VERCEL_TARGETS) {
-        const dir = join(work, t.project);
-        mkdirSync(dir, { recursive: true });
-        const run = (argv: string[], input?: string) => spawnSync("vercel", argv, { cwd: dir, input, encoding: "utf8", shell: process.platform === "win32" });
-        const link = run(["link", "--project", t.project, "--yes"]);
-        if (link.status !== 0) {
-          console.log(`✗ ${t.project}: could not link (${(link.stderr || link.stdout).trim().split("\n").pop()}). Update ${t.key} by hand in the Vercel dashboard.`);
-          continue;
-        }
-        run(["env", "rm", t.key, "production", "--yes"]);
-        const add = run(["env", "add", t.key, "production", "--sensitive"], `${raw}\n`);
-        const ok = add.status === 0;
-        console.log(`${ok ? "✓" : "✗"} ${t.project}: ${t.key} ${ok ? "set for production" : `FAILED (${(add.stderr || add.stdout).trim().split("\n").pop()}). Set it by hand`}`);
-      }
-    } finally {
-      rmSync(work, { recursive: true, force: true });
-    }
-  }
+  updateLocalFiles(raw, FILES);
+  if (withVercel) updateVercel(raw, VERCEL_TARGETS);
 
   console.log(`
 Still to do by hand:
