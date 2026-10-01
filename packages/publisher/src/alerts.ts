@@ -1,3 +1,4 @@
+import nodemailer from "nodemailer";
 import { getDb, loadEnv, rootLogger } from "@jqp/core";
 import { recordEvent, scrubText } from "./events.js";
 import { getSystemSnapshot, type ServiceStatus, type SystemSnapshot } from "./system.js";
@@ -35,13 +36,38 @@ export interface MonitorResult {
   emailSkippedReason?: string;
 }
 
-async function sendEmail(subject: string, lines: string[]): Promise<{ sent: boolean; reason?: string }> {
+/**
+ * Sends one alert email. Uses SMTP when ALERT_SMTP_HOST is set (Brevo and similar),
+ * otherwise Resend's HTTP API. Never throws: a failed email must not break the monitor.
+ */
+export async function sendAlertEmail(subject: string, lines: string[]): Promise<{ sent: boolean; reason?: string }> {
   const env = loadEnv();
   const to = env.ALERT_EMAIL_TO.trim();
-  const apiKey = (env.ALERT_RESEND_API_KEY || process.env.OPENREPLY_RESEND_API_KEY || "").trim();
   const from = (env.ALERT_EMAIL_FROM || process.env.OPENREPLY_EMAIL_FROM || "").trim();
   if (!to) return { sent: false, reason: "ALERT_EMAIL_TO not set" };
-  if (!apiKey || !from) return { sent: false, reason: "Resend API key or from-address not set" };
+
+  const smtpHost = env.ALERT_SMTP_HOST.trim();
+  if (smtpHost) {
+    if (!from || !env.ALERT_SMTP_USER || !env.ALERT_SMTP_PASS) return { sent: false, reason: "SMTP user, password or from-address not set" };
+    try {
+      const transport = nodemailer.createTransport({
+        host: smtpHost,
+        port: env.ALERT_SMTP_PORT,
+        secure: env.ALERT_SMTP_PORT === 465,
+        auth: { user: env.ALERT_SMTP_USER, pass: env.ALERT_SMTP_PASS },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 12000
+      });
+      await transport.sendMail({ from, to: to.split(",").map((s) => s.trim()).filter(Boolean), subject, text: lines.join("\n") });
+      return { sent: true };
+    } catch (err) {
+      return { sent: false, reason: scrubText(err instanceof Error ? err.message : String(err)) };
+    }
+  }
+
+  const apiKey = (env.ALERT_RESEND_API_KEY || process.env.OPENREPLY_RESEND_API_KEY || "").trim();
+  if (!apiKey || !from) return { sent: false, reason: "No email provider configured (set ALERT_SMTP_* or a Resend key) or from-address missing" };
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -68,6 +94,11 @@ async function sendEmail(subject: string, lines: string[]): Promise<{ sent: bool
 // worst case is one email per hour per warm instance, never one every 10 minutes.
 let lastDbDownEmailAt = 0;
 const DB_DOWN_EMAIL_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Test hook: forget that a database-down email was recently sent. */
+export function __resetAlertThrottleForTests(): void {
+  lastDbDownEmailAt = 0;
+}
 
 function describe(checks: ServiceStatus[]): string[] {
   return checks.map((c) => `- ${c.label}: ${c.detail}`);
@@ -96,7 +127,7 @@ export async function runMonitor(existing?: SystemSnapshot): Promise<MonitorResu
     // The database itself is unreachable. Say so, at most once an hour.
     rootLogger.error("monitor_state_unreadable", { error: scrubText(err instanceof Error ? err.message : String(err)) });
     if (Date.now() - lastDbDownEmailAt > DB_DOWN_EMAIL_INTERVAL_MS) {
-      const result = await sendEmail("[DOWN] jqp: database unreachable", [
+      const result = await sendAlertEmail("[DOWN] jqp: database unreachable", [
         "The monitor could not read from the database, so the system cannot be fully checked.",
         "",
         ...describe(snapshot.services.filter((s) => s.state !== "ok")),
@@ -152,7 +183,7 @@ export async function runMonitor(existing?: SystemSnapshot): Promise<MonitorResu
       `Details: ${dashboard}/system`,
       `Checked at ${snapshot.generatedAt}`
     ];
-    const result = await sendEmail(subject, lines);
+    const result = await sendAlertEmail(subject, lines);
     emailed = result.sent;
     emailSkippedReason = result.reason;
   }

@@ -42,7 +42,9 @@ It needs a scheduler. The repository includes `.github/workflows/monitor.yml` (e
 |---|---|---|
 | `MONITOR_TOKEN` | Vercel + GitHub secret | bearer token for `/api/cron/*`; the endpoints refuse everything without it |
 | `ALERT_EMAIL_TO` | Vercel | recipient(s), comma separated |
-| `ALERT_RESEND_API_KEY`, `ALERT_EMAIL_FROM` | Vercel | sender (Resend); falls back to the OpenReply Resend values if set |
+| `ALERT_SMTP_HOST`, `ALERT_SMTP_PORT`, `ALERT_SMTP_USER`, `ALERT_SMTP_PASS` | Vercel | SMTP sender (Brevo: `smtp-relay.brevo.com`, 587, SMTP login and key). Used in preference to Resend when `ALERT_SMTP_HOST` is set |
+| `ALERT_EMAIL_FROM` | Vercel | sender address; must be verified with your mail provider |
+| `ALERT_RESEND_API_KEY` | Vercel | alternative to SMTP; falls back to the OpenReply Resend values if set |
 | `SYSTEM_EVENT_RETENTION_DAYS` | Vercel | how long events are kept |
 
 If you would rather not use GitHub Actions, any pinger that can send a POST with an `Authorization: Bearer` header works (for example a cron job on the Oracle VM).
@@ -51,6 +53,8 @@ If you would rather not use GitHub Actions, any pinger that can send a POST with
 
 - `npm run doctor`: inside view. Schema, migrations, Meta token and webhook subscription, the OpenReply account, storage, Redis, the bridge's column contract.
 - `npm run smoke`: outside view of the deployed site. Logs in for real, loads every page, tests the webhook and the security controls.
+- `npm run test-email`: sends one test email through the alert path and reports whether the mail server accepted it.
+- `npm run set-env`: set variables locally and on Vercel without printing them (`--var`, `--copy`, `--generate`, `--clipboard`).
 - `npm run check-redis`: host, port, TLS and PING for the DM queue (never prints the password).
 
 ## Scale notes (500 to 1000 DMs a day)

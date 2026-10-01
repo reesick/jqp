@@ -24,7 +24,7 @@ Updated 2026-10-01 after the production fixes. `npm run doctor` (inside view) an
 ## Do next
 
 1. **Apply migration `0008`** in the Supabase SQL editor (`supabase/migrations/0008_system_events.sql`). Adds the error log, alert state and DM-log indexes. The code works without it, but the System page has no history and alerts stay off until it is applied.
-2. **Turn on alerts:** set `MONITOR_TOKEN`, `ALERT_EMAIL_TO`, `ALERT_RESEND_API_KEY`, `ALERT_EMAIL_FROM` on Vercel `jqp-web`; add the GitHub secret `MONITOR_TOKEN` and variable `MONITOR_URL` (see `docs/MONITORING.md`). This also runs data retention from the cloud.
+2. **Finish alerts:** email (Brevo SMTP) and `MONITOR_TOKEN` are configured locally and on Vercel `jqp-web`. The scheduler still needs two GitHub settings: repo → Settings → Secrets and variables → Actions → secret `MONITOR_TOKEN` (run `npm run set-env -- --clipboard MONITOR_TOKEN`, then paste) and variable `MONITOR_URL` = `https://jqp-web-tau.vercel.app`. Then Actions → monitor → Run workflow. This also runs data retention from the cloud.
 3. **Security:** set a dedicated random `CRON_SECRET` on `jqp-openreply-1`. Rotate the Supabase database password again at the end, because it was shared in a chat during setup (`npm run set-database-url -- --vercel`, then redeploy and update the DM worker). Same for the Redis password (`npm run set-redis -- --vercel`).
 4. **Redis connection is not encrypted** (`redis://`). The queue carries DM job data. Look for a TLS option in the Redis Cloud console, or move to a plan or provider with TLS. Also set the eviction policy to `noeviction` there (BullMQ needs it).
 5. **Retire the duplicate Vercel projects** `jqp-web-89h2` and `jqp-openreply` once nothing points at them.

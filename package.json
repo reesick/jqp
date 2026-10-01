@@ -36,7 +36,9 @@
     "mcp": "node --import tsx apps/mcp/src/index.ts",
     "set-redis": "tsx scripts/set-redis.ts",
     "set-database-url": "tsx scripts/set-database-url.ts",
-    "dm-worker": "node scripts/run-dm-worker.cjs"
+    "dm-worker": "node scripts/run-dm-worker.cjs",
+    "set-env": "tsx scripts/set-env.ts",
+    "test-email": "tsx scripts/test-email.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

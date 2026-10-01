@@ -71,6 +71,11 @@ const envObjectSchema = z.object({
   ALERT_EMAIL_TO: z.string().optional().default(""),
   ALERT_EMAIL_FROM: z.string().optional().default(""),
   ALERT_RESEND_API_KEY: z.string().optional().default(""),
+  // SMTP (e.g. Brevo smtp-relay.brevo.com:587). When ALERT_SMTP_HOST is set it is used instead of Resend.
+  ALERT_SMTP_HOST: z.string().optional().default(""),
+  ALERT_SMTP_PORT: z.coerce.number().int().positive().default(587),
+  ALERT_SMTP_USER: z.string().optional().default(""),
+  ALERT_SMTP_PASS: z.string().optional().default(""),
   SYSTEM_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90)
 });
 

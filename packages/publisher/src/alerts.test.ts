@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // simulate the two situations the review flagged: the table not existing yet
 // (migration 0008 unapplied) and the database being unreachable.
 let dbError: Error | null = null;
+const sendMail = vi.fn(async () => ({}));
+let smtpHost = "";
+
+vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail }) } }));
 
 vi.mock("@jqp/core", () => {
   const sql = Object.assign(
@@ -20,13 +24,19 @@ vi.mock("@jqp/core", () => {
       ALERT_EMAIL_TO: "owner@example.test",
       ALERT_RESEND_API_KEY: "test-key",
       ALERT_EMAIL_FROM: "alerts@example.test",
+      get ALERT_SMTP_HOST() {
+        return smtpHost;
+      },
+      ALERT_SMTP_PORT: 587,
+      ALERT_SMTP_USER: "user",
+      ALERT_SMTP_PASS: "pass",
       SYSTEM_EVENT_RETENTION_DAYS: 90
     }),
     rootLogger: { warn: () => undefined, error: () => undefined, info: () => undefined }
   };
 });
 
-import { runMonitor } from "./alerts.js";
+import { __resetAlertThrottleForTests, runMonitor } from "./alerts.js";
 import type { SystemSnapshot } from "./system.js";
 
 function snapshot(state: "ok" | "down"): SystemSnapshot {
@@ -48,6 +58,9 @@ describe("runMonitor", () => {
 
   beforeEach(() => {
     dbError = null;
+    smtpHost = "";
+    __resetAlertThrottleForTests();
+    sendMail.mockClear();
     fetchSpy.mockClear();
     vi.stubGlobal("fetch", fetchSpy);
   });
@@ -74,5 +87,17 @@ describe("runMonitor", () => {
     expect(second.emailed).toBe(false);
     expect(second.emailSkippedReason).toMatch(/within the last hour/);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends through SMTP, not Resend, when ALERT_SMTP_HOST is set", async () => {
+    smtpHost = "smtp-relay.example.test";
+    dbError = new Error("connect ECONNREFUSED");
+    const result = await runMonitor(snapshot("ok"));
+    expect(result.emailed).toBe(true);
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const sent = sendMail.mock.calls[0]?.[0] as unknown as { to: string[]; subject: string };
+    expect(sent.to).toEqual(["owner@example.test"]);
+    expect(sent.subject).toMatch(/database unreachable/);
   });
 });

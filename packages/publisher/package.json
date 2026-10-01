@@ -15,11 +15,13 @@
   "dependencies": {
     "@jqp/core": "*",
     "@jqp/meta": "*",
-    "@jqp/storage": "*",
     "@jqp/queue": "*",
+    "@jqp/storage": "*",
+    "nodemailer": "^7.0.13",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
     "typescript": "^5.7.2"
   }
 }
