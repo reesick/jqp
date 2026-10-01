@@ -1,6 +1,7 @@
 import { loadEnv, rootLogger, type Logger } from "@jqp/core";
 import { classifyMetaError, type MetaErrorBody } from "./errors.js";
 import { RetryableError, RateLimitError } from "@jqp/core";
+import { noteMetaUsage, parseMetaUsage } from "./usage.js";
 
 export interface GraphRequestOptions {
   method?: "GET" | "POST" | "DELETE";
@@ -34,6 +35,7 @@ function buildUrl(path: string, params: Record<string, string | number | boolean
 }
 
 const BACKOFF_SCHEDULE_MS = [1000, 3000, 8000]; // between attempts 1->2, 2->3, 3->4
+const MAX_INLINE_WAIT_MS = 20_000; // longer waits are deferred to the job queue instead of sleeping in-process
 
 function jitter(ms: number): number {
   return ms + Math.floor(Math.random() * ms * 0.25);
@@ -63,9 +65,11 @@ async function attemptOnce<T>(url: string, method: "GET" | "POST" | "DELETE", pa
   const parsed: unknown = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
-    throw classifyMetaError(response.status, parsed as MetaErrorBody, { path, method });
+    noteMetaUsage(parseMetaUsage(response.headers), path);
+    throw classifyMetaError(response.status, parsed as MetaErrorBody, { path, method }, response.headers);
   }
 
+  noteMetaUsage(parseMetaUsage(response.headers), path);
   return parsed as T;
 }
 
@@ -80,6 +84,12 @@ export async function graphRequest<T>(path: string, options: GraphRequestOptions
     } catch (err) {
       // Non-retryable (AuthError, NonRetryableError) always propagates immediately — retrying cannot fix it.
       if (!(err instanceof RetryableError) || attempt >= maxAttempts) {
+        throw err;
+      }
+      // A throttle Meta says will last minutes must not be waited out inside this call: that would pin a worker slot
+      // and the job would time out. Hand it back so the queue retries later (see the publish job's retry schedule).
+      if (err instanceof RateLimitError && err.retryAfterMs && err.retryAfterMs > MAX_INLINE_WAIT_MS) {
+        log.warn("meta_rate_limited_deferring", { path, retryAfterMs: err.retryAfterMs });
         throw err;
       }
       const waitMs = err instanceof RateLimitError && err.retryAfterMs ? err.retryAfterMs : jitter(BACKOFF_SCHEDULE_MS[attempt - 1] ?? 8000);

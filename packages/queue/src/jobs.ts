@@ -63,7 +63,10 @@ export async function ensureQueues(): Promise<void> {
 export async function enqueuePublishPost(data: PublishPostJobData): Promise<string | null> {
   const boss = await getBoss();
   // singletonKey prevents the same post from ever having two publish-post jobs in flight at once (plan section 48's idempotency requirement).
-  return boss.send(QUEUE.PUBLISH_POST, data, { singletonKey: `post:${data.postId}` });
+  // Retry schedule sized for Meta throttles, which last minutes to hours, not seconds: 8 retries with exponential
+  // backoff from 60s (about 1, 2, 4, 8, 16, 32, 64, 128 minutes) cover roughly four hours before the job gives up
+  // and the post is left for a manual retry. Per-job options override the queue defaults above.
+  return boss.send(QUEUE.PUBLISH_POST, data, { singletonKey: `post:${data.postId}`, retryLimit: 8, retryDelay: 60, retryBackoff: true });
 }
 
 export async function enqueueSyncCampaign(data: SyncCampaignJobData): Promise<string | null> {

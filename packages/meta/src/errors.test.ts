@@ -20,6 +20,17 @@ describe("classifyMetaError", () => {
     }
   });
 
+  it("classifies Instagram's business-use-case limit (80002) as a retryable rate limit, not a permanent failure", () => {
+    const err = classifyMetaError(400, { error: { message: "Application request limit reached", code: 80002 } });
+    expect(err).toBeInstanceOf(RateLimitError);
+  });
+
+  it("carries Meta's wait time from the response headers", () => {
+    const headers = { get: (n: string) => (n === "x-business-use-case-usage" ? JSON.stringify({ "1": [{ call_count: 100, estimated_time_to_regain_access: 12 }] }) : null) };
+    const err = classifyMetaError(400, { error: { message: "limit", code: 80002 } }, undefined, headers) as RateLimitError;
+    expect(err.retryAfterMs).toBe(12 * 60_000);
+  });
+
   it("classifies HTTP 429 as RateLimitError even without a recognized code", () => {
     const err = classifyMetaError(429, { error: { message: "Too many requests" } });
     expect(err).toBeInstanceOf(RateLimitError);
