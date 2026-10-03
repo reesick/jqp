@@ -4,7 +4,7 @@
  * backup), and set it on Vercel production. The value is never printed.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -32,7 +32,20 @@ export function readClipboard(): string {
   }
 }
 
-/** Backs up each file next to itself, then replaces (or appends) `key=value`. */
+/**
+ * Where env-file backups go: <repo parent>/jqp-private/env-backups, NOT inside the repository, so a backup can never be
+ * committed. Lock that folder to your own account (see docs/RECOVERY.md); the drive default is readable by other users.
+ * Override with JQP_BACKUP_DIR. Only the newest KEEP_BACKUPS per file are kept.
+ */
+const KEEP_BACKUPS = 5;
+function backupDir(): string {
+  // Next to the repo (same drive, never inside it): the user profile drive is often the one that is full.
+  const dir = process.env.JQP_BACKUP_DIR ?? resolve(process.cwd(), "..", "jqp-private", "env-backups");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Backs up each file (to the private backup folder), then replaces (or appends) `key=value`. */
 export function updateLocalFiles(value: string, files: FileTarget[]): void {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   for (const f of files) {
@@ -41,14 +54,18 @@ export function updateLocalFiles(value: string, files: FileTarget[]): void {
       console.log(`- ${f.path}: not present, skipped`);
       continue;
     }
-    copyFileSync(full, `${full}.bak-${f.key.toLowerCase()}-${stamp}`);
+    const label = f.path.replace(/[\/]/g, "_");
+    const dest = backupDir();
+    copyFileSync(full, join(dest, `${label}.bak-${stamp}`));
+    const mine = readdirSync(dest).filter((n) => n.startsWith(`${label}.bak-`)).sort();
+    for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_BACKUPS))) rmSync(join(dest, old), { force: true });
     const original = readFileSync(full, "utf8");
     const eol = original.includes("\r\n") ? "\r\n" : "\n";
     const line = `${f.key}=${value}`;
     const pattern = new RegExp(`^${f.key}=.*$`, "m");
     const updated = pattern.test(original) ? original.replace(pattern, () => line) : `${original.replace(/\s*$/, "")}${eol}${line}${eol}`;
     writeFileSync(full, updated);
-    console.log(`✓ ${f.path}: ${f.key} updated (backup kept next to it)`);
+    console.log(`✓ ${f.path}: ${f.key} updated (backup saved to your private backup folder)`);
   }
 }
 

@@ -39,7 +39,8 @@
     "dm-worker": "node scripts/run-dm-worker.cjs",
     "set-env": "tsx scripts/set-env.ts",
     "test-email": "tsx scripts/test-email.ts",
-    "backup": "tsx scripts/backup-db.ts"
+    "backup": "tsx scripts/backup-db.ts",
+    "rotate-db-password": "tsx scripts/rotate-db-password.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

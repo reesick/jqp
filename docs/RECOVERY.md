@@ -10,6 +10,9 @@ The folder is git-ignored and **contains personal data and encrypted tokens**. K
 
 Supabase's current plan has no automatic backups, so run this before any migration, bulk edit or risky change, and at least weekly.
 
+## Where env-file backups go
+The helper scripts back up `.env` before changing it into `D:\jqp-private\env-backups` (next to the repo, never inside it; the newest 5 per file are kept). That folder is already locked to your account and the system. If it is ever recreated, lock it again with `icacls D:\jqp-private /inheritance:r /grant:r "%COMPUTERNAME%\%USERNAME%:(OI)(CI)F" "NT AUTHORITY\SYSTEM:(OI)(CI)F"`. Override the location with `JQP_BACKUP_DIR`.
+
 ## Restore (manual, on purpose)
 Restoring overwrites live data, so it is never automatic.
 1. Stop the DM worker and the publish worker.

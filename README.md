@@ -1,5 +1,7 @@
 # jqp
 
+> **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one-page map with a diagram. [`docs/INDEX.md`](docs/INDEX.md) says which document to read for what.
+
 Instagram carousel publishing plus comment-to-DM automation, using the official Meta APIs only (Instagram API with Instagram Login). Built for a single operator running one Instagram professional account today, with a documented path to more (see `docs/ADD-ACCOUNT.md`).
 
 This guide takes you from nothing to a working system, then covers daily operation, deployment, and a troubleshooting runbook. Every command shown exists in the root `package.json` or in `scripts/`. Where something could not be verified from the repository alone, it says so.
@@ -259,6 +261,7 @@ Labels are being renamed (Home, Posts, Automations, Activity, Settings) on branc
 | `npm run check-redis` | Host, TLS and PING for the DM queue's Redis (never prints the password) |
 | `npm run set-redis` / `set-database-url` | Replace a connection string everywhere from your clipboard, after proving it works (`-- --vercel` also updates Vercel) |
 | `npm run dm-worker` | Run OpenReply's DM worker on this computer. Sends real DMs; see the warning in `scripts/run-dm-worker.cjs` |
+| `npm run rotate-db-password` | Change the database password and update Vercel and local files without printing it (needs a Supabase access token for the one command) |
 | `npm run backup` | Local read-only snapshot of every table (git-ignored; contains personal data) |
 | `npm run mcp:selftest` | Start the Claude Code server and exercise its tools |
 | `npm run migrate` | Apply Supabase migrations (ledgered, re-runnable) |
