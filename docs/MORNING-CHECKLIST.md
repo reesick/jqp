@@ -23,7 +23,7 @@ Updated 2026-10-01 after the production fixes. `npm run doctor` (inside view) an
 **No DM worker is running.** OpenReply's health shows `worker: healthy: false`. Comments will be accepted and queued in Redis, and they wait there. Pick one:
 
 - **Quick test, this computer only:** `npm run dm-worker`. Works only while the computer is on. **It sends real DMs**, and it also polls Meta every 5 minutes looking back 72 hours, so it will message anyone who commented a trigger word on a post with an active automation in the last 3 days and has not been messaged. To limit that on first start, add `COMMENT_POLL_LOOKBACK_HOURS=1` to `vendor/openreply/.env` first.
-- **Always on:** follow `docs/ORACLE-WORKER.md` (free Oracle VM) or `docs/RENDER-FREE.md`. Give it the same `REDIS_URL` and `DATABASE_URL` that are now in `vendor/openreply/.env`. Check `npm run smoke`: the line "DM worker heartbeat" turns green when it works.
+- **Always on:** follow `docs/GCP-WORKER.md` (free Google Cloud e2-micro), or `docs/ORACLE-WORKER.md` / `docs/RENDER-FREE.md`. Give it the same `REDIS_URL` and `DATABASE_URL` that are now in `vendor/openreply/.env`. Check `npm run smoke`: the line "DM worker heartbeat" turns green when it works.
 
 ## Do next
 

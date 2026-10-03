@@ -16,7 +16,8 @@
 | `MONITORING.md` | System page, alerts, the scheduled monitor |
 | `RECOVERY.md` | Backups and restore |
 | `RATE-LIMITS.md` | Meta's limits and how the code behaves when throttled |
-| `ORACLE-WORKER.md`, `RENDER-FREE.md` | Moving the DM worker off your laptop |
+| `GCP-WORKER.md` | **Move the DM worker to a free Google Cloud e2-micro** (recommended) |
+| `ORACLE-WORKER.md`, `RENDER-FREE.md` | Other hosts for the DM worker |
 
 ## Prepare content (for Claude)
 | Doc | Read it for |
