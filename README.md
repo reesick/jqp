@@ -1,5 +1,7 @@
 # jqp
 
+> **Taking over?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first.
+>
 > **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one-page map with a diagram. [`docs/INDEX.md`](docs/INDEX.md) says which document to read for what.
 
 Instagram carousel publishing plus comment-to-DM automation, using the official Meta APIs only (Instagram API with Instagram Login). Built for a single operator running one Instagram professional account today, with a documented path to more (see `docs/ADD-ACCOUNT.md`).

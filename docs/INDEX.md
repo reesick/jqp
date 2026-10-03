@@ -1,6 +1,6 @@
 # Docs index: which file to read for what
 
-**New here? Read in this order:** `ARCHITECTURE.md` (the map), then `MORNING-CHECKLIST.md` (what is left), then `REMEDIATION-PLAN.md` (what to fix).
+**New here? Read in this order:** `HANDOFF.md` (everything that happened and what is next), `ARCHITECTURE.md` (the map), then `MORNING-CHECKLIST.md` (what is left), then `REMEDIATION-PLAN.md` (what to fix).
 
 ## Understand it
 | Doc | Read it for |

@@ -1,5 +1,7 @@
 # jqp
 
+**Taking over? Read `docs/HANDOFF.md` first.** It summarises the whole project history, current state, open work and rules, and points to every other document (`docs/INDEX.md`).
+
 Instagram carousel publishing plus comment-to-DM automation, official Meta APIs only. Read `README.md` for architecture and `docs/MORNING-CHECKLIST.md` for current state.
 
 ## Ground rules
