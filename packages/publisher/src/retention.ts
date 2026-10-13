@@ -26,6 +26,8 @@ export interface PurgeResult {
   dmLogsAnonymised: number;
   commentEventsAnonymised: number;
   ourWebhookEventsDeleted: number;
+  operationalEventsDeleted: number;
+  linkClicksAnonymised: number;
 }
 
 async function tableExists(name: string): Promise<boolean> {
@@ -50,7 +52,9 @@ export async function purgeExpiredData(opts: { dryRun?: boolean } = {}): Promise
     webhookEventsDeleted: 0,
     dmLogsAnonymised: 0,
     commentEventsAnonymised: 0,
-    ourWebhookEventsDeleted: 0
+    ourWebhookEventsDeleted: 0,
+    operationalEventsDeleted: 0,
+    linkClicksAnonymised: 0
   };
 
   // postgres.js can't parameterise an interval literal, so build it from the
@@ -91,14 +95,14 @@ export async function purgeExpiredData(opts: { dryRun?: boolean } = {}): Promise
   if (await tableExists("comment_events")) {
     if (dryRun) {
       const rows = await sql<{ count: string }[]>`
-        select count(*) from comment_events where created_at < ${piiCutoff} and commenter_username is not null
+        select count(*) from comment_events where created_at < ${piiCutoff} and (commenter_username is not null or comment_text <> '')
       `;
       result.commentEventsAnonymised = Number(rows[0]?.count ?? 0);
     } else {
       const rows = await sql`
         update comment_events
         set commenter_username = null, comment_text = ''
-        where created_at < ${piiCutoff} and commenter_username is not null
+        where created_at < ${piiCutoff} and (commenter_username is not null or comment_text <> '')
         returning 1
       `;
       result.commentEventsAnonymised = rows.length;
@@ -112,6 +116,30 @@ export async function purgeExpiredData(opts: { dryRun?: boolean } = {}): Promise
     } else {
       const rows = await sql`delete from webhook_events where received_at < ${rawCutoff} returning 1`;
       result.ourWebhookEventsDeleted = rows.length;
+    }
+  }
+
+  // OpenReply's operational log keeps a preview of any request that failed signature checks (attacker-chosen text), and
+  // link clicks keep a hashed IP, user agent and referrer. Neither had a purge.
+  if (await tableExists('"OperationalEvent"')) {
+    if (dryRun) {
+      const rows = await sql<{ count: string }[]>`select count(*) from "OperationalEvent" where "createdAt" < ${rawCutoff}`;
+      result.operationalEventsDeleted = Number(rows[0]?.count ?? 0);
+    } else {
+      const rows = await sql`delete from "OperationalEvent" where "createdAt" < ${rawCutoff} returning 1`;
+      result.operationalEventsDeleted = rows.length;
+    }
+  }
+  if (await tableExists('"LinkClick"')) {
+    if (dryRun) {
+      const rows = await sql<{ count: string }[]>`
+        select count(*) from "LinkClick" where "createdAt" < ${piiCutoff} and ("ipHash" is not null or "userAgent" is not null or "referrer" is not null)`;
+      result.linkClicksAnonymised = Number(rows[0]?.count ?? 0);
+    } else {
+      const rows = await sql`
+        update "LinkClick" set "ipHash" = null, "userAgent" = null, "referrer" = null
+        where "createdAt" < ${piiCutoff} and ("ipHash" is not null or "userAgent" is not null or "referrer" is not null) returning 1`;
+      result.linkClicksAnonymised = rows.length;
     }
   }
 

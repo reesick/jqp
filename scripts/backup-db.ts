@@ -10,7 +10,8 @@
  * Read-only: runs in a single repeatable-read, read-only transaction, so the files
  * are one consistent snapshot and nothing in the database is touched.
  *
- * The job queue schema (pgboss) is skipped: those rows are transient.
+ * The job queue schema (pgboss) is skipped: those rows are transient. OpenReply's Session and VerificationToken tables are
+ * skipped too: they hold live login tokens and are worthless to restore.
  *
  * SENSITIVE: the dump contains commenter names and comment text, and encrypted
  * Instagram tokens. `backups/` is git-ignored. Keep the folder private, and delete
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
     await sql.begin("isolation level repeatable read read only", async (tx) => {
       const tables = await tx<{ table_name: string }[]>`
         select table_name from information_schema.tables
-        where table_schema = 'public' and table_type = 'BASE TABLE' order by table_name`;
+        where table_schema = 'public' and table_type = 'BASE TABLE' and table_name not in ('Session', 'VerificationToken') order by table_name`;
 
       for (const { table_name: name } of tables) {
         const cols = await tx<{ column_name: string }[]>`

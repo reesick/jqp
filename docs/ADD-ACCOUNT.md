@@ -2,7 +2,7 @@
 
 How to plug this system into an Instagram account, what to verify, and what is honestly single-account today. Read section 10 before planning a second or third account.
 
-Everything here was checked against the code in this repository on 2026-10-01. Meta's console labels and policies change; items that depend on Meta's current behavior are marked **(verify in Meta docs)**. Rules and scope justifications live in `docs/COMPLIANCE.md`.
+Written against the code on 2026-10-01; sections 6, 7.2 and 10 are partly superseded (a weekly token refresh job now exists, `npm run connect-account` stores the token encrypted and the publisher prefers it over the env token, and the `curl` examples need Git Bash or `curl.exe`, not the PowerShell `curl` alias). Meta's console labels and policies change; items that depend on Meta's current behavior are marked **(verify in Meta docs)**. Rules and scope justifications live in `docs/COMPLIANCE.md`.
 
 ---
 
@@ -116,8 +116,8 @@ Both call `loadEnv()`, so both need every **required** variable, even ones they 
 | `NEXTAUTH_URL` | OpenReply's own public URL (Vercel). Wrong value silently breaks magic-link login |
 | `NEXTAUTH_SECRET`, `CRON_SECRET` | `OPENREPLY_NEXTAUTH_SECRET`, `OPENREPLY_CRON_SECRET` |
 | `ENCRYPTION_KEY` | `OPENREPLY_ENCRYPTION_KEY`. A different value from ours; **must be identical on the web project and the DM worker** |
-| `DATABASE_URL` | Same session pooler string |
-| `REDIS_URL` | `OPENREPLY_REDIS_URL` (Upstash `rediss://`). Identical on web and worker |
+| `DATABASE_URL` | The **transaction pooler, port 6543**. Never the session pooler (5432) for OpenReply or the DM worker: that caused the 2026-10-01 outage. `npm run sync-openreply-env` sets it correctly |
+| `REDIS_URL` | `OPENREPLY_REDIS_URL` (Redis Cloud, plain `redis://`; the old Upstash database was deleted). Identical on web and worker |
 | `RESEND_API_KEY`, `EMAIL_FROM` (or `EMAIL_SERVER`) | `OPENREPLY_RESEND_API_KEY`, `OPENREPLY_EMAIL_FROM` / `OPENREPLY_EMAIL_SERVER` |
 | `META_GRAPH_API_VERSION` | `META_GRAPH_VERSION` |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | `META_APP_ID`, `META_APP_SECRET` |
@@ -202,7 +202,7 @@ Expect `subscribed_fields` to contain `comments` and `messaging_postbacks` and *
 [ ] subscribed_apps shows comments + messaging_postbacks, NOT messaging_seen (checked via API)
 [ ] META_IG_USER_ID and META_LONG_LIVED_ACCESS_TOKEN set on the machine running apps/worker
 [ ] jqp-web env: APP_BASE_URL, META_OAUTH_REDIRECT_URI, OPENREPLY_DASHBOARD_URL on the tau domain
-[ ] DATABASE_URL is the session pooler (:5432) everywhere
+[ ] DATABASE_URL: session pooler (:5432) for the dashboard, publish worker and scripts; transaction pooler (:6543) for OpenReply and the DM worker
 [ ] OpenReply ENCRYPTION_KEY and REDIS_URL identical on web and DM worker
 [ ] /api/health ok on both web apps; OpenReply worker.healthy true
 [ ] DM worker running on its host (docs/ORACLE-WORKER.md)
@@ -221,7 +221,7 @@ Real (non-tester) users and real webhook delivery need the app **Live**, and usi
 4. Re-check the rules in `docs/COMPLIANCE.md` against live docs before submitting; they change.
 5. After approval, run the verification section again on a non-tester account.
 
-For your own single account, Standard Access (Live mode, with yourself as a role holder) is enough; App Review is only required to serve other people's accounts.
+**Corrected 2026-10-13, see `docs/COMPLIANCE-AUDIT-3.md`:** Meta's overview says Standard Access is enough for an app that only serves your own account, but its webhooks page says "Advanced Access is required to receive `comments` and `live_comments` webhook notifications" and that the app must be Live. Real followers have no role on the app, so plan on App Review and Business Verification, and settle it with a Live-mode test using an account that has no role.
 
 ## 10. Current limitations for multiple accounts
 

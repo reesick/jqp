@@ -47,7 +47,7 @@ The bridge between them is `packages/publisher/src/openreply-bridge.ts`. When a 
    +-------+--------------+   +---+-----------------------+------+
    | publish worker       |   | OpenReply DM worker              |
    | apps/worker          |   | vendor/openreply worker/         |
-   | LOCAL ONLY (your PC) |   | host: Oracle free VM (pm2)       |
+   | LOCAL ONLY (your PC) |   | host: Oracle free VM (systemd)       |
    | reads D:\ folders    |   | see docs/ORACLE-WORKER.md        |
    +-------+--------------+   +----------------+-----------------+
            |                                   |
@@ -69,7 +69,7 @@ The bridge between them is `packages/publisher/src/openreply-bridge.ts`. When a 
 | Dashboard `apps/web` | Vercel project **`jqp-web`**, https://jqp-web-tau.vercel.app (region `bom1`, see `apps/web/vercel.json`) | Stateless Next.js app. `jqp-web-89h2` is an old duplicate, see `docs/LIVE.md`. |
 | OpenReply web + webhook | Vercel project **`jqp-openreply-1`**, https://jqp-openreply-1.vercel.app | This is the project wired to Meta. `jqp-openreply` is a duplicate copy. |
 | **Publish worker** `apps/worker` | **Your own machine only** | See below. |
-| OpenReply DM worker | A host you run 24/7. Documented: Oracle Cloud free VM under pm2 (`docs/ORACLE-WORKER.md`). Render alternative: `docs/RENDER-FREE.md`. | A comment can arrive at any hour and the reply must go out inside Meta's messaging window. |
+| OpenReply DM worker | A host you run 24/7. Documented: Oracle Cloud free VM under systemd (`docs/ORACLE-WORKER.md`). Render alternative: `docs/RENDER-FREE.md`. | A comment can arrive at any hour and the reply must go out inside Meta's messaging window. |
 | Database + file storage | Supabase (Mumbai, session pooler) | One project shared by everything. |
 | Queue for OpenReply | Upstash Redis | BullMQ queue, rate limiter and the worker heartbeat all live in Redis. |
 | Login emails for OpenReply | Resend (or your own SMTP) | OpenReply login is magic-link only. |

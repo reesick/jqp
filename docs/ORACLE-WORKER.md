@@ -1,6 +1,6 @@
 # DM worker on an Oracle Cloud Always Free VM
 
-Runs the OpenReply DM worker 24/7 on a free Oracle VM, with alerts that email you the moment a limit or health threshold is crossed. About 30 minutes of your time. Nothing here starts sending DMs until you run `jqp start` yourself.
+Runs the OpenReply DM worker 24/7 on a free Oracle VM, with alerts that email you the moment a limit or health threshold is crossed. About 30 minutes of your time. Nothing here starts sending DMs until you run `jqp start` (or `jqp resume`) yourself.
 
 What changed from the first version of this guide: the VM no longer needs the repository, a deploy key, 800 MB of packages, npm or pm2. We build a 6 MB bundle on your laptop and ship it. The worker runs under systemd with a dedicated user and a memory cap, and a guard process watches the limits.
 
@@ -136,7 +136,7 @@ Do the phases in order. Each has a gate; do not move on until it passes. Total t
 | Drill | Do | Expected |
 |---|---|---|
 | Worker down | `sudo systemctl stop jqp-dm-worker`, wait 1 to 2 minutes | CRITICAL email "service is inactive". `jqp start` then gives an "OK again" email |
-| Crash restart | `sudo systemctl kill -s KILL jqp-dm-worker` | Worker back within about 10 seconds. One crash is not emailed; two or more restarts between checks give a WARNING |
+| Crash restart | `sudo systemctl kill -s KILL jqp-dm-worker` | Worker back within about 10 seconds. The guard treats the restart window as normal, so one crash sends no email; two or more restarts between checks give a WARNING |
 | Reboot | `sudo reboot` | Worker starts by itself, and an INFO "VM rebooted" email arrives |
 | Force stop | `sudo -u jqp sh -c 'echo drill > /var/lib/jqp-guard/halt'` | Worker stops within seconds. `jqp start` refuses and points to `jqp resume`. After a reboot it stays stopped. `jqp resume` brings it back and it is still running 30 seconds later. Tested on the VM on 2026-10-13: the stop service fires on creating the file, is skipped when the file is deleted, and the worker unit refuses to start while the file exists |
 | Mail path | `jqp test-email` | Message arrives |
@@ -191,7 +191,7 @@ Allowed and useful as a backup. The database permits one DM per comment, so a jo
 | VM gone or stopped by Oracle | Possible idle reclaim (section 1). Create a new one and deploy again; the GCP worker keeps DMs going meanwhile. |
 
 ## 9. What this does not cover
-- The Redis connection is plain `redis://` (your decision for now) and crosses the internet from Oracle's network. Moving to a Redis with TLS is the first item on `docs/REMEDIATION-PLAN.md` before scaling.
+- The Redis connection is plain `redis://` (your decision for now) and crosses the internet from Oracle's network. Moving to a Redis with TLS is item B1 (before scaling) on `docs/REMEDIATION-PLAN.md` before scaling.
 - A single VM is a single point of failure; the second worker (section 7) is the answer.
 - Publishing still happens on your laptop because it reads image folders from disk (`docs/REMOTE-ACCESS-PLAN.md`).
 - Free limits on other services (Supabase database 500 MB, Redis Cloud memory, Vercel, GitHub Actions minutes) are separate. The dashboard's System page shows the database side; GitHub Actions minutes are the reason the monitor now runs every 30 minutes (about 1,500 of the 2,000 free minutes a month, in my estimate).

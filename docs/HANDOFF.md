@@ -2,6 +2,32 @@
 
 For a fresh Claude session (or a person) taking over. Read this, then `docs/ARCHITECTURE.md`, then `docs/REMEDIATION-PLAN.md`. Nothing secret is written here; secrets live in the root `.env`, `vendor/openreply/.env`, Vercel and the private backup folder.
 
+## UPDATE 2026-10-13 (read this first; where it disagrees with the sections below, this wins)
+
+**New account:** @addaddy.ai replaces @anveya.d as the account to post from and answer comments on. The owner is adding it as an Instagram tester on the Meta app and will supply its access token; `npm run connect-account` (see `docs/LAUNCH-TASKS.md`) validates and stores it. Nothing has been published and no campaign enabled on it.
+
+**Done and verified since the sections below were written** (commits 4b5b6ea to the latest on main, 201 tests pass, build and typecheck clean):
+- Campaign off switch fixed (it now switches the OpenReply automation off first). Not yet exercised on a live campaign.
+- Publish safety: never publishes blind (container status and recent-media check), compare-and-set checkpoints, guarded failure writes, Retry refuses a post that may already be live (`LIVE_CHECK_REQUIRED`) and clears dead containers, throttled enqueue with a separate key for Retry, wrong-account guard (a token for another account cannot publish).
+- Weekly token refresh job (stored tokens only), System page checks for token expiry, stuck posts and failed campaign sync.
+- New SQL was verified against the live database inside rolled-back transactions.
+- Retention now also purges OpenReply operational events and link-click identifiers, and fixes comments with no name. Backups skip Session and VerificationToken.
+- **Oracle VM exists and is installed**: ubuntu@130.210.51.252 (Mumbai, E2.1.Micro, Ubuntu 24.04), key `~/.ssh/oracle_jqp`. The worker is installed but NOT enabled or started. Verified on the real VM: guard mail, force-stop file path (create fires the stop, delete is a no-op, the unit will not start while it exists), `jqp check` passes inside the full service sandbox, systemd exposure scores 1.8 (worker) and 3.1 (guard), guard runs as its own user. The first `jqp start` has not happened.
+- Five independent reviews were run (code, security, Meta compliance, Oracle terms, docs-versus-code). Their findings are fixed or listed below.
+
+**Still open (in priority order)**
+1. **Meta access (decides who can use the automation):** see `docs/COMPLIANCE-AUDIT-3.md`. Meta says Advanced Access is required for comment webhooks and Development mode delivers none. Do the Live-mode test with a no-role account; start App Review and Business Verification. Until approved, only role holders reliably trigger DMs.
+2. Start the VM worker (`jqp check` then `jqp start`) and run the worker drills; set the GitHub secret `MONITOR_TOKEN` and variable `MONITOR_URL`; rotate the Redis password, Brevo key and delete the Supabase token (all appeared in chat).
+3. **OpenReply on Vercel is public with open email sign-up** (security audit H1): anyone can create a workspace, send magic-link mail through the owner's mail account and connect their own Instagram accounts to the owner's Meta app. Vendored Next.js and Auth.js also have advisories. Needs the owner's decision: (a) a Vercel Firewall rule that limits /login, /api/auth and the dashboard to the owner's IP while leaving /api/webhook and the legal pages open, and/or (b) upgrading the vendored packages (touches vendor, needs approval), and/or (c) a database trigger that rejects new User rows unless the email is on an allow list.
+4. Vercel hygiene: remove the unused `META_LONG_LIVED_ACCESS_TOKEN` from jqp-web (the dashboard never uses it), set `MOCK_META` to false if it is true, set a strong dashboard password (32+ characters; the code does not enforce it), set a distinct `CRON_SECRET` on jqp-openreply-1.
+5. Before scaling: erasure script, several public-reply variants, per-person DM cap, lower the 750 rate-limit cap, Redis TLS, a separate low-privilege database role for the worker, env allow-list for the VM, certificate-verified Postgres TLS, an `ig_account_id` on posts for true multi-account.
+6. Docs still stale in places (README mentions pm2/Upstash, MORNING-CHECKLIST and MONITORING step numbers, CLAUDE-CONTENT-GUIDE PowerShell syntax). The authoritative documents are this file, LAUNCH-TASKS, ORACLE-WORKER, COMPLIANCE-AUDIT-3.
+
+**Useful facts learned today**
+- Smoke needs explicit URLs: `SMOKE_WEB_URL=https://jqp-web-tau.vercel.app SMOKE_OPENREPLY_URL=https://jqp-openreply-1.vercel.app npm run smoke` (the local .env points at localhost). Result today: 40 of 41, the one failure is the DM worker heartbeat.
+- In PowerShell 5.1, `npm run x -- --flag` loses the flags; use `node --import tsx scripts/x.ts --flag`.
+- The Meta compliance and Oracle research are in `docs/COMPLIANCE-AUDIT-3.md` and the Oracle section notes in `docs/ORACLE-WORKER.md`; both mark what could not be verified.
+
 ## 1. The project in one paragraph
 Instagram carousel publishing plus comment-to-DM automation, official Meta APIs only, for one operator (Sri) and one Instagram account (@anveya.d), about 100 to 200 DMs a day now, with 500 to 1000 as the planned scale. Our code publishes posts. OpenReply (vendored in `vendor/openreply`, must stay unmodified) answers comments with DMs. They share one Supabase Postgres and one Meta app. The owner writes informally, wants things done rather than discussed, and insists on **not breaking production**.
 

@@ -4,6 +4,12 @@ One list, in order. We fire one task at a time. A task is done only when its "Do
 
 Owner = Sri. Me = Claude. Where both are named, the owner clicks in a console and I run the checks.
 
+## Status 2026-10-13 (supersedes the "done when" lines below where they disagree)
+- Done in code and tests: **B1** (off switch), **B2** (publish safety, safe Retry), **B3 partly** (a wrong-account guard now stops a token for another account from publishing; per-post `ig_account_id` is still not written), **B4** (weekly token refresh for stored tokens), **C5 tooling** (`node --import tsx scripts/connect-account.ts --expect addaddy.ai --check`, then without `--check`; stop the publish worker first, restart it after). Not yet done: live check of B1 on a real campaign, and everything that needs your hands (C1 to C4, C6, D1 to D3, D6).
+- **G0 is now the critical path**: Meta says comment webhooks need Advanced Access and Live mode (`docs/COMPLIANCE-AUDIT-3.md`). Do the Live-mode test with an account that has no role first, then start App Review and Business Verification if it fails.
+- The account is **@addaddy.ai**; @anveya.d stays connected but its campaigns should be switched off (C6).
+- Oracle VM is installed at ubuntu@130.210.51.252, worker not started (D4 remaining: `jqp check`, `jqp start`, drills).
+
 ## A. Decisions (answer these first, they change later tasks)
 
 | # | Question | Why it matters |
