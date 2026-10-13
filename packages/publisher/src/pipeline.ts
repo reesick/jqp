@@ -1,8 +1,17 @@
 import { readFile } from "node:fs/promises";
-import { rootLogger, ValidationError, NonRetryableError, type Logger, type PostRow } from "@jqp/core";
+import { rootLogger, loadEnv, ValidationError, NonRetryableError, AuthError, type Logger, type PostRow } from "@jqp/core";
 import { recordEvent } from "./events.js";
 import { uploadPostMedia, preflightMediaUrl, deletePostMedia } from "@jqp/storage";
-import { createChildContainer, createSingleImageContainer, createCarouselContainer, pollContainerUntilReady, publishMedia } from "@jqp/meta";
+import {
+  createChildContainer,
+  createSingleImageContainer,
+  createCarouselContainer,
+  pollContainerUntilReady,
+  publishMedia,
+  getContainerStatus,
+  listRecentMedia,
+  resolveInstagramAccount
+} from "@jqp/meta";
 import { enqueueSyncCampaign } from "@jqp/queue";
 import { scanPostFolder } from "./scanner.js";
 import { validatePost } from "./validator.js";
@@ -15,8 +24,49 @@ import {
   setPostMediaStorage,
   setPostMediaContainer,
   resolveAccountForPost,
-  getCampaignByPostId
+  getCampaignByPostId,
+  isInstagramMediaIdUsed
 } from "./repository.js";
+
+/** Thrown when another runner advanced the same post first; this runner stops quietly and leaves the post to it. */
+export class ConcurrentRunError extends Error {
+  constructor(postId: string) {
+    super(`Post ${postId} was advanced by another runner`);
+    this.name = "ConcurrentRunError";
+  }
+}
+
+const identityCache = new Map<string, number>();
+const IDENTITY_TTL_MS = 10 * 60_000;
+
+/**
+ * resolveAccountForPost plus a check that the token really belongs to the account we think we are posting to.
+ * Without it, a token from the previous account left in an env file would publish to the wrong profile.
+ * The answer is cached for 10 minutes per token so a post does not cost one call per step.
+ */
+async function resolveVerifiedAccount(post: PostRow): Promise<{ igUserId: string; accessToken: string }> {
+  const account = await resolveAccountForPost(post);
+  if (loadEnv().MOCK_META) return account;
+  const key = `${account.igUserId}:${account.accessToken.slice(-10)}`;
+  const seen = identityCache.get(key);
+  if (seen && Date.now() - seen < IDENTITY_TTL_MS) return account;
+
+  const actual = await resolveInstagramAccount(account.accessToken);
+  if (actual.igUserId !== account.igUserId) {
+    throw new NonRetryableError(
+      `The Instagram token belongs to ${actual.username ? "@" + actual.username : "account " + actual.igUserId}, but this post is set to publish as account ${account.igUserId}. Nothing was published. Run: npm run connect-account`,
+      "TOKEN_ACCOUNT_MISMATCH",
+      { expected: account.igUserId, actual: actual.igUserId }
+    );
+  }
+  identityCache.set(key, Date.now());
+  return account;
+}
+
+/** Test hook: forget which tokens were verified. */
+export function __resetIdentityCacheForTests(): void {
+  identityCache.clear();
+}
 
 /**
  * Scans a folder and ensures a DISCOVERED post row exists for it.
@@ -93,6 +143,10 @@ export async function runPublishPipeline(postId: string, folderPathOverride?: st
     }
     log.info("publish_pipeline_finished", { status: post.status });
   } catch (err) {
+    if (err instanceof ConcurrentRunError) {
+      log.warn("publish_pipeline_concurrent_run_stopped", { error: err.message });
+      return;
+    }
     if (err instanceof ValidationError) {
       // Should have been caught inside stepValidate already, but guard here too.
       await updatePostStatus(postId, { status: "VALIDATION_FAILED", errorMessage: err.message });
@@ -163,7 +217,7 @@ async function stepUpload(post: PostRow, folderPath: string, log: Logger): Promi
 }
 
 async function stepCreateChildren(post: PostRow, log: Logger): Promise<PostRow> {
-  const { igUserId, accessToken } = await resolveAccountForPost(post);
+  const { igUserId, accessToken } = await resolveVerifiedAccount(post);
   const media = await listPostMedia(post.id);
 
   for (const row of media) {
@@ -197,7 +251,7 @@ async function stepWaitForChildren(post: PostRow, log: Logger): Promise<PostRow>
 
 /** Despite the name (kept consistent with the plan's status enum), this creates the single publishable container — a carousel container for multi-image posts, or the one image container for a single-image post (plan section 69's simpler Phase 2 path). */
 async function stepCreateCreatable(post: PostRow, log: Logger): Promise<PostRow> {
-  const { igUserId, accessToken } = await resolveAccountForPost(post);
+  const { igUserId, accessToken } = await resolveVerifiedAccount(post);
   const media = await listPostMedia(post.id);
 
   let creationId: string;
@@ -225,18 +279,87 @@ async function stepWaitForCreatable(post: PostRow, log: Logger): Promise<PostRow
   await pollContainerUntilReady(post.carousel_container_id, { accessToken });
 
   log.info("creatable_container_ready");
-  await updatePostStatus(post.id, { status: "PUBLISHING" });
+  // Compare-and-set: only one runner can move the post into PUBLISHING, so two runners that picked up
+  // the same post cannot both go on to publish it.
+  const moved = await updatePostStatus(post.id, { status: "PUBLISHING" }, { from: ["WAITING_FOR_CAROUSEL"] });
+  if (!moved) throw new ConcurrentRunError(post.id);
   return { ...post, status: "PUBLISHING" };
 }
 
+const normalizeCaption = (text: string): string => text.replace(/\s+/g, " ").trim();
+// Instagram writes timestamps like 2026-10-13T12:00:00+0000; make the offset parseable everywhere.
+const parseInstagramTime = (ts: string): number => Date.parse(ts.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+
+/**
+ * Looks for a post that is already live on the account for this folder: same caption, published after our
+ * row was created, and not already recorded against another post. This is what makes a publish whose answer
+ * got lost (or a Retry of a post that did go out) safe: the pipeline records the live post instead of
+ * publishing a second copy.
+ */
+async function findLiveMedia(post: PostRow, igUserId: string, accessToken: string): Promise<string | null> {
+  const since = Date.parse(post.created_at);
+  const wanted = normalizeCaption(post.caption);
+  const recent = await listRecentMedia(igUserId, accessToken, 25);
+  for (const item of recent) {
+    if (!item.caption || normalizeCaption(item.caption) !== wanted) continue;
+    if (item.timestamp && Number.isFinite(since) && parseInstagramTime(item.timestamp) < since) continue;
+    if (await isInstagramMediaIdUsed(item.id)) continue;
+    return item.id;
+  }
+  return null;
+}
+
 async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
-  const { igUserId, accessToken } = await resolveAccountForPost(post);
+  const { igUserId, accessToken } = await resolveVerifiedAccount(post);
   if (!post.carousel_container_id) throw new Error(`stepPublish: post ${post.id} has no carousel_container_id`);
 
-  const result = await publishMedia({ igUserId, creationId: post.carousel_container_id, accessToken });
+  // 1. Is this post (or this container) already live? Meta gives no way to take a publish back, so check before
+  //    publishing, not after. A failed status lookup is a retryable error and stops here: never publish blind.
+  let mediaId: string | null = null;
+  const container = await getContainerStatus(post.carousel_container_id, accessToken);
+  if (container.status === "PUBLISHED") {
+    mediaId = await findLiveMedia(post, igUserId, accessToken);
+    if (!mediaId) {
+      throw new NonRetryableError(
+        "Instagram says this container was already published, but the post could not be found in the account's recent media. Nothing more was published. Check the Instagram profile, then fix the post by hand.",
+        "PUBLISHED_MEDIA_NOT_FOUND",
+        { postId: post.id }
+      );
+    }
+    log.warn("container_already_published_recording_existing_media", { instagramMediaId: mediaId });
+  } else {
+    mediaId = await findLiveMedia(post, igUserId, accessToken);
+    if (mediaId) log.warn("matching_post_already_live_not_publishing_again", { instagramMediaId: mediaId });
+  }
 
-  await updatePostStatus(post.id, { status: "PUBLISHED", instagramMediaId: result.id, publishedAt: new Date() });
-  log.info("post_published", { instagramMediaId: result.id });
+  // 2. Publish (a single HTTP attempt; see publishMedia).
+  if (!mediaId) {
+    try {
+      mediaId = (await publishMedia({ igUserId, creationId: post.carousel_container_id, accessToken })).id;
+    } catch (err) {
+      // A 4xx can also mean "that container is already published". Look before giving up on the post.
+      if (err instanceof NonRetryableError && !(err instanceof AuthError)) {
+        const live = await findLiveMedia(post, igUserId, accessToken);
+        if (!live) throw err;
+        log.warn("publish_rejected_but_post_is_live", { instagramMediaId: live });
+        mediaId = live;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const recorded = await updatePostStatus(
+    post.id,
+    { status: "PUBLISHED", instagramMediaId: mediaId, publishedAt: new Date() },
+    { from: ["PUBLISHING"] }
+  );
+  if (!recorded) {
+    // Another runner already finished this post. Nothing is lost; do not run the follow-ups twice.
+    log.warn("post_already_recorded_by_another_runner", { instagramMediaId: mediaId });
+    return { ...post, status: "PUBLISHED", instagram_media_id: mediaId };
+  }
+  log.info("post_published", { instagramMediaId: mediaId });
 
   // Instagram now holds its own copy, so ours is dead weight sitting in a
   // public bucket at a guessable path. Purge the bytes but keep the post_media
@@ -257,13 +380,27 @@ async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
   // Plan section 77 (automatic campaign registration): if the user already
   // staged a campaign for this post and enabled it, kick off the sync now —
   // otherwise it stays DM_SYNC_PENDING until they enable it from the dashboard.
-  const campaign = await getCampaignByPostId(post.id);
-  if (campaign && campaign.enabled) {
-    await enqueueSyncCampaign({ campaignId: campaign.id });
-    log.info("sync_campaign_enqueued", { campaignId: campaign.id });
+  // Never fails the job: the post is live, and a retry would return early at PUBLISHED and never run this
+  // again. A failure is recorded so it shows up on the System page, and the sync can be re-run from the campaign.
+  try {
+    const campaign = await getCampaignByPostId(post.id);
+    if (campaign && campaign.enabled) {
+      await enqueueSyncCampaign({ campaignId: campaign.id });
+      log.info("sync_campaign_enqueued", { campaignId: campaign.id });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error("sync_campaign_enqueue_failed", { error: message });
+    void recordEvent({
+      level: "error",
+      source: "publish",
+      code: "campaign_sync_enqueue_failed",
+      message: "The post is live but its campaign could not be queued for sync. Re-save the campaign to retry.",
+      meta: { postId: post.id }
+    });
   }
 
-  return { ...post, status: "PUBLISHED", instagram_media_id: result.id };
+  return { ...post, status: "PUBLISHED", instagram_media_id: mediaId };
 }
 
 // Re-export for callers that only need to read a folder's caption for display without running the pipeline.

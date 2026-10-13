@@ -88,9 +88,15 @@ export interface PostStatusUpdate {
   publishedAt?: Date;
 }
 
-export async function updatePostStatus(postId: string, update: PostStatusUpdate): Promise<void> {
+/**
+ * Moves a post to a new status. With `from`, the move only happens if the post is still in one of those
+ * statuses (compare-and-set), and the return value says whether it did. That is how two runners that picked up
+ * the same post cannot both advance it past a checkpoint.
+ */
+export async function updatePostStatus(postId: string, update: PostStatusUpdate, options: { from?: PostStatus[] } = {}): Promise<boolean> {
   const sql = getDb();
-  await sql`
+  const from = options.from;
+  const rows = await sql<{ id: string }[]>`
     update posts set
       status = ${update.status},
       error_message = ${update.errorMessage ?? null},
@@ -98,16 +104,37 @@ export async function updatePostStatus(postId: string, update: PostStatusUpdate)
       carousel_container_id = coalesce(${update.carouselContainerId ?? null}, carousel_container_id),
       published_at = coalesce(${update.publishedAt ?? null}, published_at)
     where id = ${postId}
+      ${from ? sql`and status::text = any(${from})` : sql``}
+    returning id
   `;
+  return rows.length > 0;
 }
 
-/** Resets a FAILED/VALIDATION_FAILED post back to DISCOVERED so the pipeline runs again from the top. Used by the dashboard's manual Retry action — never called automatically (plan section 64: failures require an explicit retry, not silent auto-resurrection). */
-export async function resetPostForRetry(postId: string): Promise<void> {
+/** True if some post already carries this Instagram media id (so a lookup never claims another post's media). */
+export async function isInstagramMediaIdUsed(mediaId: string): Promise<boolean> {
   const sql = getDb();
-  await sql`
-    update posts set status = 'DISCOVERED', error_message = null
-    where id = ${postId} and status in ('FAILED', 'VALIDATION_FAILED')
+  const rows = await sql<{ id: string }[]>`select id from posts where instagram_media_id = ${mediaId} limit 1`;
+  return rows.length > 0;
+}
+
+/**
+ * Resets a FAILED/VALIDATION_FAILED post back to DISCOVERED so the pipeline runs again from the top. Used by the
+ * dashboard's manual Retry action — never called automatically (plan section 64).
+ *
+ * The old containers are cleared too: Instagram containers expire after about a day and an errored one stays errored,
+ * so reusing them made a failed post fail the same way on every retry. A post that already has an Instagram media id
+ * is live and is never reset. Returns true if the post was reset.
+ */
+export async function resetPostForRetry(postId: string): Promise<boolean> {
+  const sql = getDb();
+  const rows = await sql<{ id: string }[]>`
+    update posts set status = 'DISCOVERED', error_message = null, carousel_container_id = null
+    where id = ${postId} and status in ('FAILED', 'VALIDATION_FAILED') and instagram_media_id is null
+    returning id
   `;
+  if (rows.length === 0) return false;
+  await sql`update post_media set child_container_id = null, container_status = 'PENDING' where post_id = ${postId}`;
+  return true;
 }
 
 // --------------------------------------------------------------------
@@ -162,6 +189,8 @@ export interface ResolvedAccount {
  * (plan's Phase 2 bootstrap path, before OAuth is wired up) when the
  * post has no ig_account_id yet.
  */
+type StoredAccountRow = { ig_user_id: string; access_token_encrypted: string | null; access_token_iv: string | null; access_token_tag: string | null; is_active: boolean };
+
 export async function resolveAccountForPost(post: PostRow): Promise<ResolvedAccount> {
   const env = loadEnv();
   const sql = getDb();
@@ -195,6 +224,25 @@ export async function resolveAccountForPost(post: PostRow): Promise<ResolvedAcco
       });
     }
     return { igUserId: account.ig_user_id, accessToken };
+  }
+
+  // No account chosen on the post: use the default account. If its token is stored (and kept fresh by the weekly
+  // refresh job) that wins over the bootstrap env token, which never renews itself. A stored token that cannot be
+  // decrypted falls back to the env token rather than blocking publishing.
+  if (env.META_IG_USER_ID) {
+    const stored = await sql<StoredAccountRow[]>`
+      select ig_user_id, access_token_encrypted, access_token_iv, access_token_tag, is_active
+      from ig_accounts where ig_user_id = ${env.META_IG_USER_ID} and is_active
+    `;
+    const row = stored[0];
+    if (row?.access_token_encrypted && row.access_token_iv && row.access_token_tag) {
+      try {
+        const accessToken = decryptSecret({ ciphertext: row.access_token_encrypted, iv: row.access_token_iv, authTag: row.access_token_tag });
+        return { igUserId: row.ig_user_id, accessToken };
+      } catch {
+        /* fall through to the bootstrap token */
+      }
+    }
   }
 
   if (env.META_LONG_LIVED_ACCESS_TOKEN) {
@@ -348,6 +396,43 @@ export async function updateCampaignSync(campaignId: string, update: CampaignSyn
 export async function listIgAccounts(): Promise<IgAccountRow[]> {
   const sql = getDb();
   return sql<IgAccountRow[]>`select * from ig_accounts order by connected_at desc nulls last`;
+}
+
+/** Accounts that have a stored token, for the refresh job. Returns decrypted tokens in memory only; never log them. */
+export async function listAccountsWithTokens(): Promise<{ igUserId: string; username: string | null; accessToken: string; tokenExpiresAt: string | null }[]> {
+  const sql = getDb();
+  const rows = await sql<(StoredAccountRow & { username: string | null; token_expires_at: string | null })[]>`
+    select ig_user_id, username, access_token_encrypted, access_token_iv, access_token_tag, token_expires_at, is_active
+    from ig_accounts where is_active and access_token_encrypted is not null
+  `;
+  const out: { igUserId: string; username: string | null; accessToken: string; tokenExpiresAt: string | null }[] = [];
+  for (const row of rows) {
+    if (!row.access_token_encrypted || !row.access_token_iv || !row.access_token_tag) continue;
+    try {
+      out.push({
+        igUserId: row.ig_user_id,
+        username: row.username,
+        accessToken: decryptSecret({ ciphertext: row.access_token_encrypted, iv: row.access_token_iv, authTag: row.access_token_tag }),
+        tokenExpiresAt: row.token_expires_at
+      });
+    } catch {
+      /* an undecryptable token is skipped; the refresh job reports it */
+    }
+  }
+  return out;
+}
+
+/** Replaces one account's stored token and expiry after a refresh. */
+export async function updateIgAccountToken(igUserId: string, accessToken: string, expiresInSeconds: number): Promise<void> {
+  const sql = getDb();
+  const encrypted = encryptSecret(accessToken);
+  const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+  await sql`
+    update ig_accounts set
+      access_token_encrypted = ${encrypted.ciphertext}, access_token_iv = ${encrypted.iv}, access_token_tag = ${encrypted.authTag},
+      token_expires_at = ${expiresAt}
+    where ig_user_id = ${igUserId}
+  `;
 }
 
 /** Stores a newly connected (or reconnected) Instagram account, encrypting its access token before it ever touches the database. */

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { getDb, rootLogger, NonRetryableError, RetryableError, type MatchMode } from "@jqp/core";
 import { deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
 
@@ -30,6 +30,15 @@ import { deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdFor
  * argument for keeping this as a thin bridge rather than a deep
  * integration).
  */
+
+/** A stable UUID for a campaign's automation (name-based, version 5 layout), so creating it twice yields the same row. */
+export function automationIdForCampaign(campaignId: string): string {
+  const hash = createHash("sha1").update(`jqp-automation:${campaignId}`).digest();
+  hash[6] = (hash[6]! & 0x0f) | 0x50;
+  hash[8] = (hash[8]! & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
 
 interface OpenReplyAccount {
   id: string;
@@ -158,7 +167,15 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
       return;
     }
 
-    const automationId = randomUUID();
+    // Creating must be safe to repeat. The id is derived from the campaign (not random), and an automation that
+    // already exists for this post on this account is reused, so a retry after a half-finished sync cannot leave
+    // two active automations on one post (which would answer every comment twice).
+    const already = await sql<{ id: string }[]>`
+      select "id" from "Automation"
+      where "instagramAccountId" = ${account.id} and "postId" = ${post.instagram_media_id}
+      order by "createdAt" asc limit 1
+    `;
+    const automationId = already[0]?.id ?? automationIdForCampaign(campaign.id);
     await sql`
       insert into "Automation" (
         "id", "workspaceId", "instagramAccountId", "name", "postId",
@@ -173,8 +190,22 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
         ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel},
         ${campaign.enabled}, ${now}, ${now}
       )
+      on conflict ("id") do update set
+        "postId" = excluded."postId",
+        "keywords" = excluded."keywords",
+        "matchAnyWord" = excluded."matchAnyWord",
+        "wholeWordMatch" = excluded."wholeWordMatch",
+        "dmMessage" = excluded."dmMessage",
+        "publicReplyEnabled" = excluded."publicReplyEnabled",
+        "publicReplyMessage" = excluded."publicReplyMessage",
+        "publicReplyMessages" = excluded."publicReplyMessages",
+        "openingDmEnabled" = excluded."openingDmEnabled",
+        "openingDmMessage" = excluded."openingDmMessage",
+        "openingDmButtonLabel" = excluded."openingDmButtonLabel",
+        "isActive" = excluded."isActive",
+        "updatedAt" = excluded."updatedAt"
     `;
-    log.info("automation_created", { automationId });
+    log.info("automation_created", { automationId, reusedExisting: Boolean(already[0]) });
     await updateCampaignSync(campaignId, {
       syncStatus: "DM_SYNCED",
       syncError: null,

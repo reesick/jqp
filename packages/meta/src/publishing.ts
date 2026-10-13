@@ -142,13 +142,35 @@ export interface PublishMediaParams {
   accessToken: string;
 }
 
+/**
+ * Publishes a ready container. Deliberately a single HTTP attempt: if the response is lost or Meta answers 5xx
+ * after accepting the publish, an inline retry would send the same publish again. The pipeline instead re-checks
+ * whether the post went live (container status, recent media) before it ever calls this a second time.
+ */
 export async function publishMedia(params: PublishMediaParams): Promise<{ id: string }> {
   const { igUserId, creationId, accessToken } = params;
   return graphRequest(`/${igUserId}/media_publish`, {
     method: "POST",
     accessToken,
+    maxAttempts: 1,
     params: { creation_id: creationId }
   });
+}
+
+export interface RecentMedia {
+  id: string;
+  caption?: string;
+  timestamp?: string;
+  permalink?: string;
+}
+
+/** The account's newest media, used to find out whether a publish that looked like it failed actually went live. */
+export async function listRecentMedia(igUserId: string, accessToken: string, limit = 25): Promise<RecentMedia[]> {
+  const result = await graphRequest<{ data?: RecentMedia[] }>(`/${igUserId}/media`, {
+    accessToken,
+    params: { fields: "id,caption,timestamp,permalink", limit }
+  });
+  return result.data ?? [];
 }
 
 export async function getMediaPermalink(mediaId: string, accessToken: string): Promise<string | undefined> {

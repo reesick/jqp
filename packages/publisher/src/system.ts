@@ -1,6 +1,7 @@
 import { getDb, loadEnv } from "@jqp/core";
 import { listRecentEvents, scrubText, type SystemEvent } from "./events.js";
 import { getDashboardStats, getTokenHealth, type DashboardStats, type TokenHealth } from "./stats.js";
+import { publishingChecks } from "./publishing-checks.js";
 
 /**
  * One consolidated, privacy-safe view of "is the system working?".
@@ -276,6 +277,37 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
         ? `Token expires in ${token.expiring[0]?.daysLeft ?? "?"} days`
         : "Token healthy"
   });
+
+  // 5. Publishing health: stuck posts, campaigns that never reached OpenReply, and the publishing token's expiry.
+  const [stuckRows, syncRows, tokenRows] = await Promise.all([
+    soft(
+      sql<{ n: number }[]>`
+        select count(*)::int as n from posts
+        where status::text in ('VALIDATING','UPLOADING','CREATING_CHILDREN','WAITING_FOR_CHILDREN','CREATING_CAROUSEL','WAITING_FOR_CAROUSEL','PUBLISHING')
+          and updated_at < now() - interval '30 minutes'`,
+      [{ n: 0 }]
+    ),
+    soft(
+      sql<{ failed: number; stuck: number }[]>`
+        select count(*) filter (where c.sync_status::text = 'DM_SYNC_FAILED')::int as failed,
+               count(*) filter (where c.enabled and p.status::text = 'PUBLISHED' and c.sync_status::text <> 'DM_SYNCED' and c.sync_status::text <> 'DM_SYNC_FAILED' and p.published_at < now() - interval '15 minutes')::int as stuck
+        from campaigns c join posts p on p.id = c.post_id`,
+      [{ failed: 0, stuck: 0 }]
+    ),
+    soft(
+      sql<{ username: string | null; token_expires_at: string | null }[]>`
+        select username, token_expires_at from ig_accounts where is_active and access_token_encrypted is not null`,
+      [] as { username: string | null; token_expires_at: string | null }[]
+    )
+  ]);
+  services.push(
+    ...publishingChecks({
+      stuckPosts: stuckRows[0]?.n ?? 0,
+      syncFailed: syncRows[0]?.failed ?? 0,
+      syncStuck: syncRows[0]?.stuck ?? 0,
+      tokens: tokenRows.map((t) => ({ username: t.username, expiresAt: t.token_expires_at }))
+    })
+  );
 
   services.push({
     key: "publishing",

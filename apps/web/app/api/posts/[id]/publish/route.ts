@@ -14,6 +14,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     );
   }
 
+  // null means a publish for this post was queued a moment ago (a double click). That is fine: it is already on its way.
   const jobId = await enqueuePublishPost({ postId: id });
-  return NextResponse.json({ success: true, data: { jobId } });
+  return NextResponse.json({ success: true, data: { jobId, alreadyQueued: jobId === null } });
 }

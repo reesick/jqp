@@ -365,9 +365,10 @@ server.registerTool(
     const post = await getPost(postId);
     if (!post) return fail("No post with that id.");
     if (post.status !== "FAILED" && post.status !== "VALIDATION_FAILED") return fail(`Post is ${post.status}; only FAILED or VALIDATION_FAILED posts can be retried.`);
-    await resetPostForRetry(postId);
+    const reset = await resetPostForRetry(postId);
+    if (!reset) return fail("This post already has an Instagram media id (or its state just changed), so it was not reset and nothing was queued. Check the Instagram profile first.");
     const jobId = await enqueuePublishPost({ postId });
-    return ok({ queued: true, jobId });
+    return ok({ queued: true, jobId, alreadyQueued: jobId === null });
   })
 );
 

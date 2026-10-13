@@ -1,11 +1,12 @@
 import type PgBoss from "pg-boss";
-import { loadEnv, rootLogger } from "@jqp/core";
+import { rootLogger } from "@jqp/core";
 import { getBoss } from "./boss.js";
 
 export const QUEUE = {
   PUBLISH_POST: "publish-post",
   SYNC_CAMPAIGN: "sync-campaign-to-openreply",
-  PURGE_EXPIRED_DATA: "purge-expired-data"
+  PURGE_EXPIRED_DATA: "purge-expired-data",
+  REFRESH_IG_TOKENS: "refresh-ig-tokens"
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -62,11 +63,23 @@ export async function ensureQueues(): Promise<void> {
 
 export async function enqueuePublishPost(data: PublishPostJobData): Promise<string | null> {
   const boss = await getBoss();
-  // singletonKey prevents the same post from ever having two publish-post jobs in flight at once (plan section 48's idempotency requirement).
   // Retry schedule sized for Meta throttles, which last minutes to hours, not seconds: 8 retries with exponential
   // backoff from 60s (about 1, 2, 4, 8, 16, 32, 64, 128 minutes) cover roughly four hours before the job gives up
   // and the post is left for a manual retry. Per-job options override the queue defaults above.
-  return boss.send(QUEUE.PUBLISH_POST, data, { singletonKey: `post:${data.postId}`, retryLimit: 8, retryDelay: 60, retryBackoff: true });
+  //
+  // On a standard pg-boss queue a bare singletonKey does nothing. singletonKey + singletonSeconds is a throttle:
+  // a second send for the same post inside 30 seconds (a double click) returns null instead of queueing a copy.
+  // Longer-term duplicates are stopped inside the pipeline (compare-and-set status changes and the check for an
+  // already-live post). expireInSeconds is 15 minutes because one job runs the whole upload, container and publish
+  // sequence, which can take several minutes when Meta is slow.
+  return boss.send(QUEUE.PUBLISH_POST, data, {
+    singletonKey: `post:${data.postId}`,
+    singletonSeconds: 30,
+    expireInSeconds: 900,
+    retryLimit: 8,
+    retryDelay: 60,
+    retryBackoff: true
+  });
 }
 
 export async function enqueueSyncCampaign(data: SyncCampaignJobData): Promise<string | null> {
@@ -76,8 +89,9 @@ export async function enqueueSyncCampaign(data: SyncCampaignJobData): Promise<st
 
 async function registerWorker<T extends object>(queueName: QueueName, handler: (data: T, jobId: string) => Promise<void>): Promise<void> {
   const boss = await getBoss();
-  const env = loadEnv();
-  await boss.work<T>(queueName, { batchSize: env.QUEUE_CONCURRENCY }, async (jobs) => {
+  // One job at a time. The handlers below run a fetched batch one after another while all of them share the
+  // queue's expiry clock, so a larger batch only made later jobs expire before they started.
+  await boss.work<T>(queueName, { batchSize: 1 }, async (jobs) => {
     for (const job of jobs) {
       const log = rootLogger.child({ queue: queueName, jobId: job.id });
       try {
@@ -100,6 +114,17 @@ export function registerSyncCampaignWorker(handler: (data: SyncCampaignJobData, 
 
 export function registerPurgeExpiredDataWorker(handler: () => Promise<void>): Promise<void> {
   return registerWorker<Record<string, never>>(QUEUE.PURGE_EXPIRED_DATA, handler);
+}
+
+export function registerRefreshTokensWorker(handler: () => Promise<void>): Promise<void> {
+  return registerWorker<Record<string, never>>(QUEUE.REFRESH_IG_TOKENS, handler);
+}
+
+/** Refreshes stored Instagram tokens every Monday 03:00 UTC (a long-lived token lasts 60 days and can be renewed once it is a day old). */
+export async function scheduleTokenRefresh(): Promise<void> {
+  const boss = await getBoss();
+  await boss.schedule(QUEUE.REFRESH_IG_TOKENS, "0 3 * * 1", {}, { tz: "UTC" });
+  rootLogger.info("token_refresh_schedule_registered", { cron: "0 3 * * 1" });
 }
 
 /**

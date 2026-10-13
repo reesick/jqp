@@ -8,9 +8,11 @@ import {
   registerSyncCampaignWorker,
   registerPurgeExpiredDataWorker,
   schedulePurgeExpiredData,
+  registerRefreshTokensWorker,
+  scheduleTokenRefresh,
   registerQueueShutdownHooks
 } from "@jqp/queue";
-import { runPublishPipeline, syncCampaignToOpenReply, purgeExpiredData, recordEvent } from "@jqp/publisher";
+import { runPublishPipeline, syncCampaignToOpenReply, purgeExpiredData, refreshStoredTokens, recordEvent } from "@jqp/publisher";
 import { setMetaUsageObserver } from "@jqp/meta";
 import { RateLimitError } from "@jqp/core";
 import { startHealthServer } from "./health.js";
@@ -64,6 +66,11 @@ async function main() {
     await purgeExpiredData();
   });
   await schedulePurgeExpiredData();
+
+  await registerRefreshTokensWorker(async () => {
+    await refreshStoredTokens();
+  });
+  await scheduleTokenRefresh();
 
   setReady(true);
   log.info("worker_ready");

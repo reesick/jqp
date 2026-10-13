@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PostRow, PostMediaRow } from "@jqp/core";
 
+// The pipeline reads MOCK_META through loadEnv(); the unit tests have no full env, so give it a minimal one.
+vi.mock("@jqp/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@jqp/core")>();
+  return { ...actual, loadEnv: () => ({ MOCK_META: false }) };
+});
+
 const repo = {
+  isInstagramMediaIdUsed: vi.fn(),
   getPost: vi.fn(),
   updatePostStatus: vi.fn(),
   listPostMedia: vi.fn(),
@@ -22,7 +29,10 @@ const meta = {
   createSingleImageContainer: vi.fn(),
   createCarouselContainer: vi.fn(),
   pollContainerUntilReady: vi.fn(),
-  publishMedia: vi.fn()
+  publishMedia: vi.fn(),
+  getContainerStatus: vi.fn(),
+  listRecentMedia: vi.fn(),
+  resolveInstagramAccount: vi.fn()
 };
 vi.mock("@jqp/meta", () => meta);
 
@@ -38,7 +48,7 @@ vi.mock("./scanner.js", () => scannerMock);
 const validatorMock = { validatePost: vi.fn() };
 vi.mock("./validator.js", () => validatorMock);
 
-const { runPublishPipeline } = await import("./pipeline.js");
+const { runPublishPipeline, __resetIdentityCacheForTests } = await import("./pipeline.js");
 const { NonRetryableError, RetryableError } = await import("@jqp/core");
 
 function basePost(overrides: Partial<PostRow> = {}): PostRow {
@@ -73,6 +83,13 @@ beforeEach(() => {
   });
   repo.resolveAccountForPost.mockResolvedValue({ igUserId: "ig_1", accessToken: "token" });
   repo.getCampaignByPostId.mockResolvedValue(null);
+  // Compare-and-set succeeds unless a test says another runner got there first.
+  repo.updatePostStatus.mockResolvedValue(true);
+  repo.isInstagramMediaIdUsed.mockResolvedValue(false);
+  meta.getContainerStatus.mockResolvedValue({ status: "FINISHED" });
+  meta.listRecentMedia.mockResolvedValue([]);
+  meta.resolveInstagramAccount.mockResolvedValue({ igUserId: "ig_1", username: "acct" });
+  __resetIdentityCacheForTests();
 });
 
 describe("runPublishPipeline — terminal state short-circuits", () => {
@@ -104,6 +121,7 @@ describe("runPublishPipeline — single-image path skips carousel steps", () => 
     repo.updatePostStatus.mockImplementation(async (_id: string, update: { status: string; carouselContainerId?: string }) => {
       currentStatus = update.status;
       if (update.carouselContainerId) carouselContainerId = update.carouselContainerId;
+      return true;
     });
 
     validatorMock.validatePost.mockResolvedValue({ valid: true, issues: [], images: [{ sequence: 1, originalFilename: "1.jpg", buffer: Buffer.from("x"), width: 10, height: 10 }], caption: "hello" });
@@ -215,6 +233,7 @@ describe("runPublishPipeline — resumability", () => {
     repo.updatePostStatus.mockImplementation(async (_id: string, update: { status: string; carouselContainerId?: string }) => {
       currentStatus = update.status;
       if (update.carouselContainerId) carouselContainerId = update.carouselContainerId;
+      return true;
     });
 
     validatorMock.validatePost.mockResolvedValue({
@@ -239,5 +258,166 @@ describe("runPublishPipeline — resumability", () => {
     expect(storage.uploadPostMedia).toHaveBeenCalledTimes(1);
     expect(storage.uploadPostMedia).toHaveBeenCalledWith(expect.objectContaining({ sequence: 2 }));
     expect(meta.createChildContainer).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Publish safety: Meta cannot take a publish back, so the pipeline must never publish a second copy.
+// ---------------------------------------------------------------------------------------------
+
+const liveTimestamp = () => new Date(Date.now() + 5000).toISOString().replace("Z", "+0000");
+const liveItem = (overrides: Record<string, unknown> = {}) => ({ id: "live_1", caption: "hello", timestamp: liveTimestamp(), ...overrides });
+const publishing = () => basePost({ status: "PUBLISHING", carousel_container_id: "c1" });
+
+describe("publish safety", () => {
+  it("records the live post and does NOT publish again when Meta says the container is already published", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "PUBLISHED" });
+    meta.listRecentMedia.mockResolvedValue([liveItem()]);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "live_1" }), { from: ["PUBLISHING"] });
+  });
+
+  it("fails the post, without publishing, when the container is published but the media cannot be found", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "PUBLISHED" });
+    meta.listRecentMedia.mockResolvedValue([]);
+
+    await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("does not publish a second copy when a post with the same caption is already live (Retry after a lost answer)", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.listRecentMedia.mockResolvedValue([liveItem({ caption: "  hello  " })]);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "live_1" }), { from: ["PUBLISHING"] });
+  });
+
+  it("publishes normally when the account has no matching post", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.listRecentMedia.mockResolvedValue([liveItem({ caption: "something else" })]);
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).toHaveBeenCalledTimes(1);
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "new_1" }), { from: ["PUBLISHING"] });
+  });
+
+  it("ignores media that is older than the post row", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.listRecentMedia.mockResolvedValue([liveItem({ timestamp: "2020-01-01T00:00:00+0000" })]);
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("never claims media that is already recorded against another post", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.listRecentMedia.mockResolvedValue([liveItem()]);
+    repo.isInstagramMediaIdUsed.mockResolvedValue(true);
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).toHaveBeenCalledTimes(1);
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ instagramMediaId: "new_1" }), { from: ["PUBLISHING"] });
+  });
+
+  it("treats a 4xx from publish as success when the post is in fact live", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    // first lookup (before publishing): nothing; second lookup (after the rejection): the post is there
+    meta.listRecentMedia.mockResolvedValueOnce([]).mockResolvedValueOnce([liveItem()]);
+    meta.publishMedia.mockRejectedValue(new NonRetryableError("already published", "ALREADY_PUBLISHED"));
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "live_1" }), { from: ["PUBLISHING"] });
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("still fails the post on a 4xx when nothing is live", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.publishMedia.mockRejectedValue(new NonRetryableError("bad container", "BAD"));
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("does not publish if the container status lookup fails (never publish blind)", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockRejectedValue(new RetryableError("network"));
+
+    await expect(runPublishPipeline("post_1", "/fake")).rejects.toBeInstanceOf(RetryableError);
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+  });
+
+  it("stops quietly, without publishing, when another runner already moved the post on", async () => {
+    repo.getPost.mockResolvedValue(basePost({ status: "WAITING_FOR_CAROUSEL", carousel_container_id: "c1" }));
+    meta.pollContainerUntilReady.mockResolvedValue(undefined);
+    repo.updatePostStatus.mockResolvedValue(false);
+
+    await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+  });
+
+  it("does not run the follow-ups twice if another runner already recorded the publish", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+    repo.updatePostStatus.mockResolvedValue(false);
+    repo.getCampaignByPostId.mockResolvedValue({ id: "campaign_1", enabled: true });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(queueMock.enqueueSyncCampaign).not.toHaveBeenCalled();
+  });
+
+  it("keeps the job successful when queuing the campaign sync fails after the post is live", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+    repo.getCampaignByPostId.mockResolvedValue({ id: "campaign_1", enabled: true });
+    queueMock.enqueueSyncCampaign.mockRejectedValue(new Error("db blip"));
+
+    await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
+
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED" }), { from: ["PUBLISHING"] });
+  });
+});
+
+describe("wrong-account guard", () => {
+  it("publishes nothing and fails the post when the token belongs to a different account", async () => {
+    repo.getPost.mockResolvedValue(basePost({ status: "CREATING_CHILDREN", media_type: "CAROUSEL" }));
+    meta.resolveInstagramAccount.mockResolvedValue({ igUserId: "someone_else", username: "old_account" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.createChildContainer).not.toHaveBeenCalled();
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED", errorMessage: expect.stringContaining("@old_account") }));
+  });
+
+  it("checks the account only once per token, not once per step", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+
+    await runPublishPipeline("post_1", "/fake");
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.resolveInstagramAccount).toHaveBeenCalledTimes(1);
   });
 });

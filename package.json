@@ -42,7 +42,8 @@
     "backup": "tsx scripts/backup-db.ts",
     "rotate-db-password": "tsx scripts/rotate-db-password.ts",
     "bundle-dm-worker": "tsx scripts/bundle-dm-worker.ts",
-    "deploy-dm-worker": "tsx scripts/deploy-dm-worker.ts"
+    "deploy-dm-worker": "tsx scripts/deploy-dm-worker.ts",
+    "connect-account": "tsx scripts/connect-account.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

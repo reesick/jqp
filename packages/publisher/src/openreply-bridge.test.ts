@@ -34,7 +34,7 @@ const repo = {
 };
 vi.mock("./repository.js", () => repo);
 
-const { syncCampaignToOpenReply } = await import("./openreply-bridge.js");
+const { syncCampaignToOpenReply, automationIdForCampaign } = await import("./openreply-bridge.js");
 
 function basePost(overrides: Partial<PostRow> = {}): PostRow {
   return {
@@ -207,6 +207,26 @@ describe("syncCampaignToOpenReply — opening DM (two-step button reveal)", () =
 
     const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
     expect(insertCall!.values).not.toContain("stale");
+  });
+});
+
+describe("syncCampaignToOpenReply — creating an automation is safe to repeat", () => {
+  it("derives the same automation id for the same campaign every time, and a different one per campaign", () => {
+    expect(automationIdForCampaign("campaign_1")).toBe(automationIdForCampaign("campaign_1"));
+    expect(automationIdForCampaign("campaign_1")).not.toBe(automationIdForCampaign("campaign_2"));
+    expect(automationIdForCampaign("campaign_1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("inserts with the derived id and an on-conflict update, so a repeat cannot create a second row", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign());
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    const insert = sqlCalls.find((c) => c.text.includes("insert into"))!;
+    expect(insert.values).toContain(automationIdForCampaign("campaign_1"));
+    expect(insert.text).toContain('on conflict ("id") do update');
+    expect(repo.updateCampaignSync).toHaveBeenCalledWith("campaign_1", expect.objectContaining({ openreplyAutomationId: automationIdForCampaign("campaign_1") }));
   });
 });
 
