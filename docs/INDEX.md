@@ -16,6 +16,7 @@
 | `MONITORING.md` | System page, alerts, the scheduled monitor |
 | `RECOVERY.md` | Backups and restore |
 | `RATE-LIMITS.md` | Meta's limits and how the code behaves when throttled |
+| `LAUNCH-TASKS.md` | **The task list to launch the new Instagram account, in order** |
 | `ORACLE-WORKER.md` | **Run the DM worker on a free Oracle VM**: small bundle, systemd, limit alerts by email (current plan) |
 | `GCP-WORKER.md` | Same worker on a free Google Cloud e2-micro (good as the backup second worker) |
 | `RENDER-FREE.md` | Render fallback (free tier sleeps) |
