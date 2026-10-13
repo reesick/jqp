@@ -9,6 +9,7 @@
 #   jqp rollback    go back to the previous worker build and restart it
 #   jqp logs        follow the worker log
 #   jqp test-email  send a test alert
+#   jqp report      send the VM status report email now (it also goes out every 6 hours)
 set -euo pipefail
 
 HALT=/var/lib/jqp-guard/halt
@@ -20,8 +21,9 @@ SANDBOX=(-p NoNewPrivileges=true -p ProtectSystem=strict -p ProtectHome=true -p 
   -p ProtectProc=invisible -p "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" -p RestrictNamespaces=true -p RestrictSUIDSGID=true
   -p LockPersonality=true -p CapabilityBoundingSet= -p SystemCallFilter=@system-service -p SystemCallArchitectures=native
   -p UMask=0077 -p IPAddressDeny=169.254.169.254)
+EXTRA=() # extra systemd properties for one call, e.g. a folder the command may write to
 run_as() { # run_as <user> <envfile> <node args...>
-  sudo systemd-run --quiet --pipe --wait --collect -p User="$1" -p EnvironmentFile="$2" -p Environment=NODE_ENV=production "${SANDBOX[@]}" /usr/bin/node "${@:3}"
+  sudo systemd-run --quiet --pipe --wait --collect -p User="$1" -p EnvironmentFile="$2" -p Environment=NODE_ENV=production "${SANDBOX[@]}" "${EXTRA[@]}" /usr/bin/node "${@:3}"
 }
 run_as_jqp() { run_as jqp "$@"; }
 run_as_guard() { run_as jqp-guard "$@"; }
@@ -76,5 +78,6 @@ case "${1:-}" in
     ;;
   logs) sudo journalctl -u jqp-dm-worker -f -n 50 ;;
   test-email) run_as_guard /etc/jqp/guard.env /opt/jqp/bin/vm-guard.mjs --test-email ;;
-  *) sed -n '2,11p' "$0"; exit 1 ;;
+  report) EXTRA=(-p ReadWritePaths=/var/lib/jqp-guard); run_as_guard /etc/jqp/guard.env /opt/jqp/bin/vm-guard.mjs --report ;;
+  *) sed -n '2,12p' "$0"; exit 1 ;;
 esac

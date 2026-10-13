@@ -3,6 +3,7 @@ import {
   DEFAULT_THRESHOLDS as T,
   accumulateTransfer,
   bodyFor,
+  buildVmReport,
   decide,
   emptyState,
   normalizeState,
@@ -15,6 +16,7 @@ import {
   parseDfPercent,
   parseMeminfo,
   parseNetDevTx,
+  reportDue,
   subjectFor,
   type Reading
 } from "./guard-core";
@@ -211,5 +213,63 @@ describe("message", () => {
     const body = bodyFor(alerts, "vm1", Date.UTC(2026, 9, 13));
     expect(body).toContain("What to do:");
     expect(body).toContain("2026-10-13T00:00:00.000Z");
+  });
+});
+
+describe("vm status report", () => {
+  const base = {
+    host: "jqp-dm-worker",
+    now: Date.UTC(2026, 9, 14, 6, 0),
+    thresholds: T,
+    diskPct: 11,
+    memTotalMb: 954,
+    mem: { availableMb: 540, swapTotalMb: 1024, swapFreeMb: 1024 },
+    transferBytes: 2.3e9,
+    serviceActive: "active",
+    serviceEnabled: "enabled",
+    halted: null,
+    restartsSinceBoot: 0,
+    uptimeSec: 90_000,
+    load1: 0.04,
+    cpus: 1
+  };
+  const readings = (level: "ok" | "warn" | "crit") => [{ id: "disk", label: "Disk", level, detail: "x" }];
+
+  it("is due on first run, after six hours, and if the clock went backwards", () => {
+    expect(reportDue(null, 1_000)).toBe(true);
+    expect(reportDue(1_000, 1_000 + 5 * 3_600_000)).toBe(false);
+    expect(reportDue(1_000, 1_000 + 6 * 3_600_000)).toBe(true);
+    expect(reportDue(10_000, 5_000)).toBe(true);
+  });
+
+  it("reports a healthy running worker with the limits shown", () => {
+    const r = buildVmReport({ ...base, readings: readings("ok") });
+    expect(r.subject).toBe("[VM OK] jqp-dm-worker: worker running, disk 11%");
+    expect(r.html).toContain("VM healthy");
+    expect(r.html).toContain("force stop 95%");
+    expect(r.html).toContain("2.30 GB of 10 TB free");
+    expect(r.text).toContain("DM worker running");
+  });
+
+  it("calls out a force stop as needing attention", () => {
+    const r = buildVmReport({ ...base, readings: readings("ok"), serviceActive: "inactive", halted: "2026-10-14T05:00:00Z disk" });
+    expect(r.subject).toContain("ATTENTION");
+    expect(r.html).toContain("VM needs attention");
+    expect(r.html).toContain("STOPPED by the force stop");
+  });
+
+  it("treats a worker that was stopped on purpose as a fact, not an alarm", () => {
+    const r = buildVmReport({ ...base, readings: readings("ok"), serviceActive: "inactive", serviceEnabled: "disabled" });
+    expect(r.subject.startsWith("[VM OK]")).toBe(true);
+    expect(r.text).toContain("stopped on purpose or not started yet");
+  });
+
+  it("escapes the host name in the html", () => {
+    expect(buildVmReport({ ...base, host: "<b>x</b>", readings: readings("ok") }).html).toContain("&lt;b&gt;x&lt;/b&gt;");
+  });
+
+  it("keeps old state files valid and adds the report time", () => {
+    expect(normalizeState({}).lastReportAt).toBeNull();
+    expect(normalizeState({ lastReportAt: 123 }).lastReportAt).toBe(123);
   });
 });

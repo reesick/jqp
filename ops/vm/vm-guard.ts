@@ -14,12 +14,14 @@ import { join } from "node:path";
 import nodemailer from "nodemailer";
 import {
   DEFAULT_THRESHOLDS,
+  REPORT_INTERVAL_MS,
   type Alert,
   type GuardState,
   type Reading,
   type Thresholds,
   accumulateTransfer,
   bodyFor,
+  buildVmReport,
   decide,
   emptyState,
   normalizeState,
@@ -30,6 +32,7 @@ import {
   parseDfPercent,
   parseMeminfo,
   parseNetDevTx,
+  reportDue,
   subjectFor
 } from "./guard-core";
 
@@ -110,14 +113,14 @@ function mailConfig() {
   };
 }
 
-async function sendMail(subject: string, text: string): Promise<boolean> {
+async function sendMail(subject: string, text: string, html?: string): Promise<boolean> {
   const cfg = mailConfig();
   if (!cfg) {
     console.error("mail not configured (ALERT_SMTP_HOST, ALERT_EMAIL_TO, ALERT_EMAIL_FROM); cannot send");
     return false;
   }
   try {
-    await cfg.transport.sendMail({ from: cfg.from, to: cfg.to, subject, text });
+    await cfg.transport.sendMail({ from: cfg.from, to: cfg.to, subject, text, ...(html ? { html } : {}) });
     return true;
   } catch (error) {
     console.error("mail failed:", error instanceof Error ? error.message : "unknown error");
@@ -154,11 +157,42 @@ async function main(): Promise<void> {
     gradeTransfer(transfer.bytes, t)
   ];
 
+  const mem = parseMeminfo(readText("/proc/meminfo"));
+  const haltedText = existsSync(HALT_FILE) ? readText(HALT_FILE).trim() || "stop file present" : null;
+  const makeReport = () =>
+    buildVmReport({
+      host,
+      now,
+      readings,
+      thresholds: t,
+      diskPct: parseDfPercent(dfOut),
+      memTotalMb: os.totalmem() / 1048576,
+      mem,
+      transferBytes: transfer.bytes,
+      serviceActive: serviceState,
+      serviceEnabled,
+      halted: haltedText,
+      restartsSinceBoot: restartCount,
+      uptimeSec: os.uptime(),
+      load1: os.loadavg()[0] ?? 0,
+      cpus: os.cpus().length
+    });
+
   if (args.has("--dry-run")) {
+    if (args.has("--report")) console.log(makeReport().text);
     for (const r of readings) console.log(`${r.level.padEnd(4)} ${r.label}: ${r.detail}`);
     console.log(`state dir: ${existsSync(STATE_DIR) ? STATE_DIR : `${STATE_DIR} (not created yet)`}`);
     if (existsSync(HALT_FILE)) console.log(`HALTED: ${readText(HALT_FILE).trim()}. Run \`jqp resume\` once the cause is fixed.`);
     return;
+  }
+
+  // --report: send the status email now, then stop (no alert logic, no force stop).
+  if (args.has("--report")) {
+    const r = makeReport();
+    const ok = await sendMail(r.subject, r.text, r.html);
+    if (ok) saveState({ ...state, transfer, lastReportAt: now });
+    console.log(ok ? "status report sent" : "status report FAILED");
+    process.exit(ok ? 0 : 1);
   }
 
   const { alerts, checks } = decide(state.checks, readings, now);
@@ -217,8 +251,16 @@ async function main(): Promise<void> {
     transfer,
     restarts: { lastCount: restartCount ?? state.restarts.lastCount },
     bootId: bootId ?? state.bootId,
-    haltNotified: haltActive ? state.haltNotified : false
+    haltNotified: haltActive ? state.haltNotified : false,
+    lastReportAt: state.lastReportAt
   };
+
+  // The scheduled status report, sent even when nothing is wrong. A failed send is retried in 10 minutes.
+  if (reportDue(state.lastReportAt, now)) {
+    const r = makeReport();
+    const reportSent = await sendMail(r.subject, r.text, r.html);
+    next.lastReportAt = reportSent ? now : now - REPORT_INTERVAL_MS + 10 * 60_000;
+  }
 
   if (alerts.length === 0) {
     saveState(next);
