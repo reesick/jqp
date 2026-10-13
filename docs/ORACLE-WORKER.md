@@ -40,20 +40,37 @@ My recommendation: stay on Always Free, use the AMD micro, and keep the GCP work
 
 The guard's thresholds (all adjustable with `GUARD_*` settings in `/etc/jqp/guard.env`):
 
-| Check | Warning | Critical |
-|---|---|---|
-| Boot disk used | 70% | 85% |
-| Memory available | under 150 MB | under 80 MB |
-| Swap used | 50% | 80% |
-| Outbound data this month | 5 GB | 20 GB |
-| Worker restarts between two checks | 2 | 5 |
-| Worker service not running | | immediately |
+| Check | Warning | Critical | Force stop of the worker |
+|---|---|---|---|
+| Boot disk used | 70% | 85% | **95%** |
+| Memory available | under 150 MB | under 80 MB | no |
+| Swap used | 50% | 80% | no |
+| Outbound data this month | 5 GB | 20 GB | **95% of Oracle's 10 TB allowance** |
+| Worker restarts between two checks | 2 | 5 | no |
+| Worker service not running | | immediately | |
 
 The outbound-data numbers are tripwires, not the real limit. Oracle's allowance is 10 TB; a DM worker sends megabytes. If it ever reaches 5 GB something is wrong (a loop, or a compromised machine), and you hear about it long before the free limit matters. The email shows the figure as a percentage of the 10 TB allowance.
 
 Emails go out on a change (OK to warning, warning to critical, back to OK), repeat every 6 hours while critical and every 24 hours while a warning, and say what to do. If the mail itself fails, it retries the next minute.
 
 What the guard cannot do: if the whole VM dies it cannot email you. The dashboard monitor covers that, but only once the two GitHub settings exist (`MONITOR_TOKEN` secret and `MONITOR_URL` variable, see `docs/MONITORING.md`). Do those two settings; they matter more now.
+
+## 2b. Force stop at the limit, and why nothing is lost
+
+**The stop.** When the boot disk reaches 95%, or outbound data reaches 95% of Oracle's 10 TB monthly allowance, the guard writes a stop file. A root-owned systemd path unit sees it within a second and stops the DM worker, and the worker's unit refuses to start while the file exists, so a reboot does not bring it back. You get a CRITICAL email saying the worker was stopped automatically. The guard checks every minute, so the stop lands within about a minute of crossing the line. You undo it with `jqp resume` (it shows the readings, asks you to confirm, removes the file, starts the worker). Memory pressure and crash loops email you but never stop the worker, because they cost nothing. The halt percentages can be changed with `GUARD_DISK_HALT_PCT` and `GUARD_TRANSFER_HALT_PCT` in `/etc/jqp/guard.env`.
+
+Be clear about what can and cannot hit these lines. The VM's size is fixed by the shape you choose, so CPU, memory and storage cannot grow past the free allowance by themselves. The one meter that moves on its own is outbound data, and a DM worker sends megabytes against a 10 TB allowance, so the 95% stop is a last line of defence. It will almost never fire; the 5 GB and 20 GB emails are the ones you will act on. Money the account spends outside this VM (a resource someone created in the console) is invisible to the VM. That is what the Oracle budget alert in step 3 is for, and it is checked daily, not instantly.
+
+**Why a stop loses nothing.** Four layers, each true today:
+
+1. The comment webhook runs on Vercel, not on the VM. A comment arriving while the worker is stopped is still received and put on the Redis queue.
+2. Redis keeps queued jobs. I checked the live Redis (2026-10-13, read-only): its eviction policy is `noeviction`, so it never silently drops jobs to make room, and it uses 2.6 MB. If it ever filled up it would refuse new jobs rather than delete old ones.
+3. A comment that never became a job is caught anyway. The worker's polling sweep asks Meta every 5 minutes for comments from the last 72 hours and queues any that were missed. When the worker comes back it catches up on everything from the last 3 days.
+4. The database allows one DM per comment, so catching up cannot double-send.
+
+The limit that cannot be fixed afterwards is Meta's: a private reply must go out within 7 days of the comment. The critical email repeats every 6 hours while the worker is stopped. Resume within a few days and nothing is lost; after 7 days those replies can no longer be sent.
+
+Two caveats I could not remove: this Redis has no append-only file, so a Redis restart could in theory lose queued jobs (layer 3 recovers them from Meta within 72 hours), and the connection is the plain `redis://` one, so the traffic is not encrypted.
 
 ## 3. Create the Oracle side (console, about 15 minutes)
 
@@ -93,7 +110,47 @@ jqp status         # service, guard timer and the current readings
 2. On the VM: `jqp start`, then `jqp logs`. You should see `[DM Worker] Started`.
 3. From your laptop: `npm run smoke`. The DM worker heartbeat line should pass and the hostname should be the VM's.
 4. Comment the keyword from a second account on the live post and confirm the DM arrives.
-5. Safe test of the alerts: `sudo systemctl stop jqp-dm-worker` then wait about a minute. You should get a CRITICAL email, and an "OK again" email after `jqp start`.
+5. Run the drills in section 5b before you trust it.
+
+## 5b. Production plan: phases, gates and drills
+
+Do the phases in order. Each has a gate; do not move on until it passes. Total time about 2 hours, most of it waiting.
+
+| Phase | Do | Gate (how you know) |
+|---|---|---|
+| 0. Before the VM | Put `MONITOR_TOKEN` (secret) and `MONITOR_URL` (variable) in GitHub and run the monitor workflow once. Rotate the Redis and Brevo keys if you have not. Make sure Oracle's emails reach an inbox you read. | Workflow run is green |
+| 1. Account | Turn on multi-factor sign-in for the Oracle account. Create the budget alert (step 3). | Budget shows in the console |
+| 2. VM | Section 3. AMD micro, public IP, nothing else. | Shape shows "Always Free-eligible"; `ssh` works |
+| 3. Deploy | Section 4 (one command). | `jqp test-email` arrives; `jqp check` all ok |
+| 4. Drills | Below. | Every drill gives the expected result |
+| 5. Cut over | Section 5: stop other workers, `jqp start`, `npm run smoke`, one real test comment. | Smoke passes; DM arrives; heartbeat hostname is the VM |
+| 6. Watch | 24 hours: `jqp status` morning and evening, and the System page. | No unexplained emails, restart count stays at 0 |
+| 7. Steady state | Weekly: `jqp status`, `npm run backup`, read Oracle emails. Monthly: the outbound data figure in guard emails, and GitHub Actions minutes. | |
+
+**Drills (phase 4), with no real comments pending**
+
+| Drill | Do | Expected |
+|---|---|---|
+| Worker down | `sudo systemctl stop jqp-dm-worker`, wait 1 to 2 minutes | CRITICAL email "service is inactive". `jqp start` then gives an "OK again" email |
+| Crash restart | `sudo systemctl kill -s KILL jqp-dm-worker` | Worker back within about 10 seconds; maybe a WARNING |
+| Reboot | `sudo reboot` | Worker starts by itself, and an INFO "VM rebooted" email arrives |
+| Force stop | `sudo -u jqp sh -c 'echo drill > /var/lib/jqp-guard/halt'` | Worker stops within seconds. `jqp start` refuses and points to `jqp resume`. After a reboot it stays stopped. `jqp resume` brings it back |
+| Mail path | `jqp test-email` | Message arrives |
+| Dead VM | Stop the instance in the Oracle console for 40 minutes | Dashboard monitor emails that the worker heartbeat is stale. Start it again after |
+
+**Failure playbook**
+
+| What happened | You see | Do | Data at risk |
+|---|---|---|---|
+| Worker crashed | Restart email | Nothing, it restarts. Read `jqp logs` if it repeats | None |
+| Worker stopped by the guard | CRITICAL "STOPPED automatically" | Fix the cause (disk: clear space; data: find what is sending), then `jqp resume` | None if resumed within 7 days |
+| VM unreachable or reclaimed | Dashboard monitor email (up to 30 min) | Start the GCP worker, then rebuild this VM from section 3 | None; queue and poller cover it |
+| Database password changed | Worker errors in logs | Deploy with `--push-env --restart` | None |
+| Redis down | Dashboard monitor email | Fix Redis, restart the worker | Comments received while Redis is down are recovered by the 72 hour poll |
+| Meta rate limited | Dashboard events | Wait; the worker retries by itself | None |
+| Suspected compromise | Unusual outbound data email | `jqp stop`, rotate database, Redis, mail and Meta secrets, rebuild the VM | Rotate everything |
+
+Rollback of a bad deploy: check out the earlier commit, run the deploy command with `--restart`, check out `main` again. Expect a worker crash or reboot to be back within a minute, and a lost VM to be a 10 to 15 minute rebuild, or no gap at all if the GCP worker is already running.
 
 ## 6. Day to day
 
@@ -102,6 +159,7 @@ jqp status         # service, guard timer and the current readings
 | Ship a new build | `npm run deploy-dm-worker -- --host ubuntu@<IP> --key ... --restart` |
 | New database or Redis password | `npm run deploy-dm-worker -- --host ubuntu@<IP> --key ... --push-env --restart` |
 | New mail key | same with `--push-guard-env` |
+| Start again after an automatic stop | `jqp resume` |
 | Stop sending DMs | `jqp stop` (comments queue in Redis and are answered on restart, within Meta's 7-day window) |
 | Look at the readings | `jqp status` |
 | Follow the log | `jqp logs` |

@@ -8,11 +8,17 @@ export interface Reading {
   label: string;
   level: Level;
   detail: string;
+  // True when this reading is bad enough that the DM worker must be stopped automatically.
+  halt?: boolean;
 }
 
 export interface Thresholds {
   diskWarnPct: number;
   diskCritPct: number;
+  // Automatic stop of the DM worker. Queued DMs wait safely in Redis until you resume.
+  diskHaltPct: number;
+  // Percent of Oracle's free outbound allowance (10 TB a month) at which the worker is stopped.
+  transferHaltPct: number;
   memAvailWarnMb: number;
   memAvailCritMb: number;
   swapWarnPct: number;
@@ -28,6 +34,8 @@ export interface Thresholds {
 export const DEFAULT_THRESHOLDS: Thresholds = {
   diskWarnPct: 70,
   diskCritPct: 85,
+  diskHaltPct: 95,
+  transferHaltPct: 95,
   memAvailWarnMb: 150,
   memAvailCritMb: 80,
   swapWarnPct: 50,
@@ -137,7 +145,8 @@ export function gradeDisk(usedPct: number | null, t: Thresholds): Reading {
     id: "disk",
     label: "Disk",
     level: levelHigh(usedPct, t.diskWarnPct, t.diskCritPct),
-    detail: `${usedPct}% of the boot disk used`
+    detail: `${usedPct}% of the boot disk used`,
+    halt: usedPct >= t.diskHaltPct
   };
 }
 
@@ -158,7 +167,8 @@ export function gradeTransfer(bytes: number, t: Thresholds): Reading {
     id: "transfer",
     label: "Outbound data",
     level: levelHigh(gb, t.transferWarnGb, t.transferCritGb),
-    detail: `${gb.toFixed(2)} GB sent this month (${pct.toFixed(3)}% of Oracle's ${ORACLE_FREE_TRANSFER_TB} TB free allowance)`
+    detail: `${gb.toFixed(2)} GB sent this month (${pct.toFixed(3)}% of Oracle's ${ORACLE_FREE_TRANSFER_TB} TB free allowance)`,
+    halt: pct >= t.transferHaltPct
   };
 }
 
@@ -230,6 +240,7 @@ const ADVICE: Record<string, string> = {
   transfer: "Far more outbound data than a DM worker should send. Check `sudo journalctl -u jqp-dm-worker --since today`, then consider stopping the service and rotating secrets.",
   service: "Run `sudo systemctl status jqp-dm-worker` and `sudo journalctl -u jqp-dm-worker -n 80`. A crash loop is usually a wrong DATABASE_URL or REDIS_URL.",
   reboot: "The VM restarted (Oracle maintenance or a crash). The worker comes back on its own; confirm with `npm run smoke`.",
+  halt: "The worker was stopped automatically and stays stopped, even after a reboot. Queued DMs are safe in Redis. Fix the cause, then run `jqp resume`. Resume within 7 days so Meta still accepts the replies.",
   mail: "Test mail path on the VM: sudo -u jqp node /opt/jqp/bin/vm-guard.mjs --test-email"
 };
 

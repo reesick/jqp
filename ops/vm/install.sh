@@ -8,7 +8,7 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then echo "Run with sudo: sudo bash install.sh"; exit 1; fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
-for f in dm-worker.mjs selfcheck.mjs vm-guard.mjs jqp-dm-worker.service jqp-vm-guard.service jqp-vm-guard.timer jqp-ctl.sh; do
+for f in dm-worker.mjs selfcheck.mjs vm-guard.mjs jqp-dm-worker.service jqp-vm-guard.service jqp-vm-guard.timer jqp-halt.path jqp-halt.service jqp-ctl.sh; do
   [ -f "$HERE/$f" ] || { echo "Missing $f next to install.sh"; exit 1; }
 done
 
@@ -41,7 +41,7 @@ echo "==> Files"
 install -m 644 "$HERE/dm-worker.mjs" "$HERE/selfcheck.mjs" "$HERE/vm-guard.mjs" /opt/jqp/bin/
 [ -f "$HERE/VERSION" ] && install -m 644 "$HERE/VERSION" /opt/jqp/VERSION
 install -m 755 "$HERE/jqp-ctl.sh" /usr/local/bin/jqp
-install -m 644 "$HERE/jqp-dm-worker.service" "$HERE/jqp-vm-guard.service" "$HERE/jqp-vm-guard.timer" /etc/systemd/system/
+install -m 644 "$HERE/jqp-dm-worker.service" "$HERE/jqp-vm-guard.service" "$HERE/jqp-vm-guard.timer" "$HERE/jqp-halt.path" "$HERE/jqp-halt.service" /etc/systemd/system/
 
 echo "==> Keep the log from filling the disk"
 install -d /etc/systemd/journald.conf.d
@@ -51,7 +51,7 @@ systemctl restart systemd-journald
 echo "==> Services"
 systemctl daemon-reload
 systemctl enable jqp-dm-worker >/dev/null 2>&1
-systemctl enable --now jqp-vm-guard.timer >/dev/null 2>&1
+systemctl enable --now jqp-vm-guard.timer jqp-halt.path >/dev/null 2>&1
 
 echo
 echo "Installed. Not started: jqp-dm-worker (so no DMs go out yet)."

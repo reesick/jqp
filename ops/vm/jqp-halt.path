@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop the jqp DM worker when the guard asks for it
+
+[Path]
+# The guard creates this file when a hard limit is reached.
+PathChanged=/var/lib/jqp-guard/halt
+Unit=jqp-halt.service
+
+[Install]
+WantedBy=multi-user.target

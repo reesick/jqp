@@ -45,7 +45,7 @@ async function main(): Promise<void> {
   await bundle("ops/dm-worker/selfcheck.ts", "selfcheck.mjs", "vendor/openreply/tsconfig.json");
   await bundle("ops/vm/vm-guard.ts", "vm-guard.mjs", "tsconfig.base.json");
 
-  for (const f of ["install.sh", "jqp-ctl.sh", "jqp-dm-worker.service", "jqp-vm-guard.service", "jqp-vm-guard.timer"]) {
+  for (const f of ["install.sh", "jqp-ctl.sh", "jqp-dm-worker.service", "jqp-vm-guard.service", "jqp-vm-guard.timer", "jqp-halt.path", "jqp-halt.service"]) {
     // Always LF: a Windows checkout can turn these into CRLF, which Linux cannot run.
     writeFileSync(join(out, f), readFileSync(join(root, "ops", "vm", f), "utf8").replace(/\r\n/g, "\n"));
   }

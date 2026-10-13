@@ -4,6 +4,8 @@ After=network-online.target
 Wants=network-online.target
 # Keep retrying forever instead of giving up after a few crashes.
 StartLimitIntervalSec=0
+# Do not start (not even after a reboot) while the guard has halted the worker. `jqp resume` removes the file.
+ConditionPathExists=!/var/lib/jqp-guard/halt
 
 [Service]
 Type=simple

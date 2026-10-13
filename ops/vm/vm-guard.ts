@@ -35,6 +35,7 @@ import {
 const SERVICE = process.env.GUARD_SERVICE ?? "jqp-dm-worker";
 const STATE_DIR = process.env.GUARD_STATE_DIR ?? "/var/lib/jqp-guard";
 const STATE_FILE = join(STATE_DIR, "state.json");
+const HALT_FILE = join(STATE_DIR, "halt");
 const args = new Set(process.argv.slice(2));
 
 function thresholds(): Thresholds {
@@ -145,10 +146,30 @@ async function main(): Promise<void> {
   if (args.has("--dry-run")) {
     for (const r of readings) console.log(`${r.level.padEnd(4)} ${r.label}: ${r.detail}`);
     console.log(`state dir: ${existsSync(STATE_DIR) ? STATE_DIR : `${STATE_DIR} (not created yet)`}`);
+    if (existsSync(HALT_FILE)) console.log(`HALTED: ${readText(HALT_FILE).trim()}. Run \`jqp resume\` once the cause is fixed.`);
     return;
   }
 
   const { alerts, checks } = decide(state.checks, readings, now);
+
+  // Force stop. Writing this file is the whole mechanism: jqp-halt.path notices it and a root
+  // service stops the worker, and the worker unit refuses to start while the file exists (so
+  // a reboot does not bring it back). Queued comments stay in Redis; `jqp resume` undoes it.
+  // Safety first: the file is written before any mail is attempted.
+  const haltReasons = readings.filter((r) => r.halt);
+  if (haltReasons.length > 0 && !existsSync(HALT_FILE)) {
+    mkdirSync(STATE_DIR, { recursive: true });
+    writeFileSync(HALT_FILE, `${new Date(now).toISOString()} ${haltReasons.map((r) => r.id).join(",")}\n`, { mode: 0o644 });
+    alerts.push({
+      kind: "problem",
+      reading: {
+        id: "halt",
+        label: "DM worker STOPPED automatically",
+        level: "crit",
+        detail: `${haltReasons.map((r) => `${r.label}: ${r.detail}`).join("; ")}. Queued comments are safe in Redis and will be answered after \`jqp resume\`.`
+      }
+    });
+  }
   const bootId = readText("/proc/sys/kernel/random/boot_id").trim() || null;
   if (state.bootId && bootId && bootId !== state.bootId) {
     const uptimeMin = Math.round(os.uptime() / 60);

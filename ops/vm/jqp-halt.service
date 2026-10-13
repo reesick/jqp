@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop the jqp DM worker (hard limit reached)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop jqp-dm-worker.service

@@ -85,6 +85,26 @@ describe("grading", () => {
   });
 });
 
+describe("force stop", () => {
+  it("halts the worker at 95% of the disk, not before", () => {
+    expect(gradeDisk(94, T).halt).toBe(false);
+    expect(gradeDisk(95, T).halt).toBe(true);
+  });
+  it("halts at 95% of Oracle's 10 TB outbound allowance, not before", () => {
+    expect(gradeTransfer(9.4e12, T).halt).toBe(false);
+    expect(gradeTransfer(9.5e12, T).halt).toBe(true);
+  });
+  it("never halts for a plain warning or a crash loop", () => {
+    expect(gradeDisk(72, T).halt).toBe(false);
+    expect(gradeTransfer(30e9, T).halt).toBe(false);
+    expect(gradeService("active", 9, T).halt).toBeUndefined();
+    expect(gradeMemory({ availableMb: 10, swapTotalMb: 0, swapFreeMb: 0 }, T).halt).toBeUndefined();
+  });
+  it("lets the halt thresholds be tuned", () => {
+    expect(gradeDisk(90, { ...T, diskHaltPct: 90 }).halt).toBe(true);
+  });
+});
+
 describe("transfer accounting", () => {
   const jan = Date.UTC(2026, 0, 15);
   it("counts nothing on the first run, then the difference", () => {
