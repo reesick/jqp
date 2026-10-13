@@ -3,6 +3,7 @@ name: monitor
 # Calls the dashboard's protected endpoints on a schedule:
 #   every 30 minutes  POST /api/cron/monitor  (health check + failure alerts)
 #   daily 04:30 UTC   POST /api/cron/purge    (data retention, runs in the cloud)
+#   every 6 hours     POST /api/cron/digest   (emails the full health and activity summary)
 #
 # Inert until you add, under Settings > Secrets and variables > Actions:
 #   secret   MONITOR_TOKEN   same value as the MONITOR_TOKEN env var on Vercel
@@ -15,6 +16,7 @@ on:
   schedule:
     - cron: "*/30 * * * *"
     - cron: "30 4 * * *"
+    - cron: "5 */6 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -36,11 +38,18 @@ jobs:
           fi
 
       - name: Health monitor
-        if: steps.cfg.outputs.skip != 'true' && github.event.schedule != '30 4 * * *'
+        if: steps.cfg.outputs.skip != 'true' && github.event.schedule != '30 4 * * *' && github.event.schedule != '5 */6 * * *'
         run: |
           curl --fail-with-body -sS -m 60 -X POST \
             -H "Authorization: Bearer $MONITOR_TOKEN" \
             "$MONITOR_URL/api/cron/monitor"
+
+      - name: Health digest email
+        if: steps.cfg.outputs.skip != 'true' && (github.event.schedule == '5 */6 * * *' || github.event_name == 'workflow_dispatch')
+        run: |
+          curl --fail-with-body -sS -m 60 -X POST \
+            -H "Authorization: Bearer $MONITOR_TOKEN" \
+            "$MONITOR_URL/api/cron/digest"
 
       - name: Retention purge
         if: steps.cfg.outputs.skip != 'true' && (github.event.schedule == '30 4 * * *' || github.event_name == 'workflow_dispatch')

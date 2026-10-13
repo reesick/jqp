@@ -141,7 +141,7 @@ function viewDm(p) {
     '<div class="note">Match rule: ' + esc(p.dm_flow.match) + ". Keyword: " + esc(kw) + ".</div></div></div>" +
     '<div><div class="seg"><button data-m="spec" class="' + (spec ? "on" : "") + '">As written in the spec</button><button data-m="button" class="' + (!spec ? "on" : "") + '">As it will really send</button></div>' +
     '<div class="phone"><div class="dmhd"><img src="' + DATA.brand.avatar + '"> addaddy.ai</div>' + thread + "</div>" +
-    '<div class="note" style="max-width:380px">' + (spec ? "The spec sends two messages in a row. Meta lets an app send only ONE message in reply to a comment; a second one is allowed only after the person responds. So this version would be rejected for step 2." : "A button is added to message 1. The person taps it, which counts as responding, and only then does message 2 (with the link) go out. Message 1 also says it is automated. This copy needs your OK because it changes message 1.") + "</div></div></div>";
+    '<div class="note" style="max-width:380px">' + (spec ? "The spec sends two messages in a row. Meta lets an app send only ONE message in reply to a comment; a second one is allowed only after the person responds. So this version would be rejected for step 2." : "Message 1 carries a button. Message 2 (with the link) is only sent after the person taps it; a tap counts as responding, which is what Meta requires for a second message.") + "</div></div></div>";
 }
 
 function viewRun(p) {

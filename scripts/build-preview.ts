@@ -78,9 +78,11 @@ function checkPost(p: PostJson, folder: string): { items: Check[]; counts: Recor
   else add("Instagram limits", "ok", "Caption length", `${[...p.caption].length} of 2,200 characters.`);
 
   // ---- What Meta's rules and our system mean for this DM flow
-  if (s1 && !AUTOMATED.test(s1.text)) add("Meta and system", "block", "Message 1 does not say it is automated", "Meta expects automated messages to disclose that. Suggested opening copy is on the 'Comment and DM' tab; it changes message 1, so it needs your OK.");
-  add("Meta and system", "warn", "Two messages in a row are not allowed", "After a comment, an app may send ONE reply. A second message is only allowed after the person responds. The system therefore sends message 1 with a button, and message 2 after the tap. The button is added for you (see 'Comment and DM').");
-  add("Meta and system", p.guide_url.includes("notion") ? "manual" : "ok", "Guide link must open without login", `Open ${p.guide_url} in a private window. If it asks for a login, the DM link is useless. Notion needs the hub published (Share, Publish).`);
+  // Message 1 as it will really be sent is the short version the owner chose ("click below for the ... prompts").
+  const sent1 = `click below for the ${p.brand} prompts`;
+  if (!AUTOMATED.test(sent1)) add("Meta and system", "warn", "Message 1 does not say it is automated", "Your choice: Meta recommends automated messages say so, and requires it where the law does. It is not a technical blocker.");
+  add("Meta and system", "ok", "One reply per comment, then the tap", "Meta allows ONE reply to a comment. Message 1 carries a button; message 2 (the link) is only sent after the person taps it, which counts as responding.");
+  add("Meta and system", "ok", "Guide link", `Confirmed live by you: ${p.guide_url}. (The hub page is not live, which does not matter for the DM.)`);
   add("Meta and system", "ok", "Public reply and follow gate", "Both stay off for launch. Public replies need several variants first; follow gating is a spam-policy risk.");
   add("Meta and system", "manual", "Meta app is Live", "In the Meta app's top bar. Development mode delivers no real webhooks.");
   add("Meta and system", "manual", "Test with a stranger", "Comment PROMPT from an account with no role on your app. Meta says comment webhooks need Advanced Access; whether Live mode alone is enough is unverified.");
@@ -106,7 +108,7 @@ function main(): void {
     const s2 = p.dm_flow.steps[1]?.text ?? "";
     // The opening message the system will actually send: the spec's message 1 with the automation disclosure in front,
     // plus a button. Shown to the owner as a proposal, never applied silently.
-    const openingDm = AUTOMATED.test(s1) ? s1 : `this is an automated message. you asked for the ${p.brand} campaign prompts. tap below and i'll send them over.`;
+    const openingDm = `click below for the ${p.brand} prompts`;
     const guideMdPath = join(folder, "prompt_guide.md");
     return {
       ...p,

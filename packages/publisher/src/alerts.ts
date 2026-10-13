@@ -40,7 +40,7 @@ export interface MonitorResult {
  * Sends one alert email. Uses SMTP when ALERT_SMTP_HOST is set (Brevo and similar),
  * otherwise Resend's HTTP API. Never throws: a failed email must not break the monitor.
  */
-export async function sendAlertEmail(subject: string, lines: string[]): Promise<{ sent: boolean; reason?: string }> {
+export async function sendAlertEmail(subject: string, lines: string[], html?: string): Promise<{ sent: boolean; reason?: string }> {
   const env = loadEnv();
   const to = env.ALERT_EMAIL_TO.trim();
   const from = (env.ALERT_EMAIL_FROM || process.env.OPENREPLY_EMAIL_FROM || "").trim();
@@ -61,7 +61,7 @@ export async function sendAlertEmail(subject: string, lines: string[]): Promise<
         greetingTimeout: 8000,
         socketTimeout: 12000
       });
-      await transport.sendMail({ from, to: to.split(",").map((s) => s.trim()).filter(Boolean), subject, text: lines.join("\n") });
+      await transport.sendMail({ from, to: to.split(",").map((s) => s.trim()).filter(Boolean), subject, text: lines.join("\n"), ...(html ? { html } : {}) });
       return { sent: true };
     } catch (err) {
       return { sent: false, reason: scrubText(err instanceof Error ? err.message : String(err)) };
@@ -79,7 +79,8 @@ export async function sendAlertEmail(subject: string, lines: string[]): Promise<
         from,
         to: to.split(",").map((s) => s.trim()).filter(Boolean),
         subject,
-        text: lines.join("\n")
+        text: lines.join("\n"),
+        ...(html ? { html } : {})
       }),
       signal: AbortSignal.timeout(8000)
     });

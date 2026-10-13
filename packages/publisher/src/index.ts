@@ -8,5 +8,6 @@ export * from "./retention.js";
 export * from "./events.js";
 export * from "./system.js";
 export * from "./alerts.js";
+export * from "./digest.js";
 export * from "./message-text.js";
 export * from "./token-refresh.js";
