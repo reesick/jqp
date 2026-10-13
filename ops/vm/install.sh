@@ -38,19 +38,27 @@ install -d -m 750 -o root -g jqp /etc/jqp
 for f in worker.env guard.env; do [ -f "/etc/jqp/$f" ] || install -m 600 -o root -g root /dev/null "/etc/jqp/$f"; done
 
 echo "==> Files"
+# Keep the previous worker build so `jqp rollback` has something to go back to.
+if [ -f /opt/jqp/bin/dm-worker.mjs ] && ! cmp -s "$HERE/dm-worker.mjs" /opt/jqp/bin/dm-worker.mjs; then
+  cp -f /opt/jqp/bin/dm-worker.mjs /opt/jqp/bin/dm-worker.mjs.prev
+fi
 install -m 644 "$HERE/dm-worker.mjs" "$HERE/selfcheck.mjs" "$HERE/vm-guard.mjs" /opt/jqp/bin/
+# The folder must exist before the first guard run so the stop-file watcher has something to watch.
+install -d -m 755 -o jqp -g jqp /var/lib/jqp-guard
 [ -f "$HERE/VERSION" ] && install -m 644 "$HERE/VERSION" /opt/jqp/VERSION
 install -m 755 "$HERE/jqp-ctl.sh" /usr/local/bin/jqp
 install -m 644 "$HERE/jqp-dm-worker.service" "$HERE/jqp-vm-guard.service" "$HERE/jqp-vm-guard.timer" "$HERE/jqp-halt.path" "$HERE/jqp-halt.service" /etc/systemd/system/
 
 echo "==> Keep the log from filling the disk"
 install -d /etc/systemd/journald.conf.d
-printf '[Journal]\nSystemMaxUse=100M\n' > /etc/systemd/journald.conf.d/jqp.conf
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=100M\n' > /etc/systemd/journald.conf.d/jqp.conf
 systemctl restart systemd-journald
 
 echo "==> Services"
 systemctl daemon-reload
-systemctl enable jqp-dm-worker >/dev/null 2>&1
+# The worker is enabled (starts at boot) only by `jqp start`, never by an install. If it is not
+# running, make sure an earlier install did not leave it enabled.
+systemctl is-active --quiet jqp-dm-worker || systemctl disable jqp-dm-worker >/dev/null 2>&1 || true
 systemctl enable --now jqp-vm-guard.timer jqp-halt.path >/dev/null 2>&1
 
 echo

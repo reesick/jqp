@@ -20,6 +20,8 @@ RestartSec=10
 TimeoutStopSec=30
 # The VM has 1 GB. This keeps a runaway worker from taking the whole machine down with it.
 MemoryMax=600M
+# Swap is capped too, otherwise a leak turns into slow swapping instead of a restart.
+MemorySwapMax=300M
 # The worker only needs to read its own bundle and talk to the network.
 NoNewPrivileges=true
 ProtectSystem=strict

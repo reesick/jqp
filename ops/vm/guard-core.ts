@@ -114,10 +114,42 @@ export interface GuardState {
   transfer: { month: string; bytes: number; lastCounter: number | null };
   restarts: { lastCount: number | null };
   bootId: string | null;
+  // True once the "worker stopped automatically" email has gone out for the current stop.
+  haltNotified: boolean;
 }
 
 export function emptyState(): GuardState {
-  return { checks: {}, transfer: { month: "", bytes: 0, lastCounter: null }, restarts: { lastCount: null }, bootId: null };
+  return {
+    checks: {},
+    transfer: { month: "", bytes: 0, lastCounter: null },
+    restarts: { lastCount: null },
+    bootId: null,
+    haltNotified: false
+  };
+}
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+// Reads whatever is in state.json and returns a safe state. A corrupt or hand-edited file must
+// never stop the guard from running (a crash here would also stop the force stop from working).
+export function normalizeState(raw: unknown): GuardState {
+  const base = emptyState();
+  if (!isObj(raw)) return base;
+  if (isObj(raw.checks)) {
+    for (const [id, c] of Object.entries(raw.checks)) {
+      if (isObj(c) && (c.level === "ok" || c.level === "warn" || c.level === "crit") && isNum(c.since)) {
+        base.checks[id] = { level: c.level, since: c.since, lastAlertAt: isNum(c.lastAlertAt) ? c.lastAlertAt : null };
+      }
+    }
+  }
+  if (isObj(raw.transfer) && typeof raw.transfer.month === "string" && isNum(raw.transfer.bytes) && raw.transfer.bytes >= 0) {
+    base.transfer = { month: raw.transfer.month, bytes: raw.transfer.bytes, lastCounter: isNum(raw.transfer.lastCounter) ? raw.transfer.lastCounter : null };
+  }
+  if (isObj(raw.restarts) && isNum(raw.restarts.lastCount)) base.restarts.lastCount = raw.restarts.lastCount;
+  if (typeof raw.bootId === "string") base.bootId = raw.bootId;
+  base.haltNotified = raw.haltNotified === true;
+  return base;
 }
 
 export function monthKey(now: number): string {

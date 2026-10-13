@@ -2,16 +2,23 @@
 # Short commands for the VM. Installed as /usr/local/bin/jqp.
 #   jqp status      worker service, guard timer, resource readings
 #   jqp check       read-only pre-flight (database, Redis, waiting DM count)
-#   jqp start|stop|restart
+#   jqp start       start the worker now and at every boot (this is what begins sending DMs)
+#   jqp stop        stop the worker and keep it stopped, also after a reboot
+#   jqp restart
 #   jqp resume      start again after the guard stopped the worker at a limit
+#   jqp rollback    go back to the previous worker build and restart it
 #   jqp logs        follow the worker log
 #   jqp test-email  send a test alert
 set -euo pipefail
+
+HALT=/var/lib/jqp-guard/halt
 
 run_as_jqp() {
   # Loads the env file for the child only, so secrets never appear in the shell.
   sudo systemd-run --quiet --pipe --wait --collect -p User=jqp -p EnvironmentFile="$1" /usr/bin/node "${@:2}"
 }
+
+show_status() { systemctl --no-pager --lines=3 status jqp-dm-worker || true; }
 
 case "${1:-}" in
   status)
@@ -22,17 +29,42 @@ case "${1:-}" in
     echo; cat /opt/jqp/VERSION 2>/dev/null || true
     ;;
   check) run_as_jqp /etc/jqp/worker.env /opt/jqp/bin/selfcheck.mjs ;;
-  resume)
-    run_as_jqp /etc/jqp/guard.env /opt/jqp/bin/vm-guard.mjs --dry-run
-    read -r -p "Cause fixed? Remove the stop and start the worker (y/N) " yn
-    [ "$yn" = "y" ] && sudo rm -f /var/lib/jqp-guard/halt && sudo systemctl start jqp-dm-worker && systemctl --no-pager --lines=3 status jqp-dm-worker || echo "Left stopped."
-    ;;
   start)
-    if [ -e /var/lib/jqp-guard/halt ]; then echo "The guard stopped the worker at a limit ($(cat /var/lib/jqp-guard/halt)). Fix the cause, then run: jqp resume"; exit 1; fi
-    sudo systemctl start jqp-dm-worker && systemctl --no-pager --lines=3 status jqp-dm-worker || true
+    if [ -e "$HALT" ]; then echo "The guard stopped the worker at a limit ($(cat "$HALT")). Fix the cause, then run: jqp resume"; exit 1; fi
+    sudo systemctl enable --now jqp-dm-worker
+    show_status
     ;;
-  stop|restart) sudo systemctl "$1" jqp-dm-worker && systemctl --no-pager --lines=3 status jqp-dm-worker || true ;;
+  stop)
+    sudo systemctl disable --now jqp-dm-worker
+    show_status
+    ;;
+  restart)
+    if [ -e "$HALT" ]; then echo "The worker is halted ($(cat "$HALT")). Use: jqp resume"; exit 1; fi
+    sudo systemctl restart jqp-dm-worker
+    show_status
+    ;;
+  resume)
+    if [ ! -e "$HALT" ]; then echo "Nothing to resume: the guard has not stopped the worker. Use: jqp start"; exit 0; fi
+    run_as_jqp /etc/jqp/guard.env /opt/jqp/bin/vm-guard.mjs --dry-run || true
+    echo
+    echo "If the cause is still there (for example outbound data is still over the limit), the guard will stop the worker again within a minute."
+    yn=n
+    read -r -p "Cause fixed? Remove the stop and start the worker (y/N) " yn || yn=n
+    if [ "$yn" = "y" ]; then
+      sudo rm -f "$HALT"
+      sudo systemctl enable --now jqp-dm-worker
+      show_status
+    else
+      echo "Left stopped."
+    fi
+    ;;
+  rollback)
+    if [ ! -f /opt/jqp/bin/dm-worker.mjs.prev ]; then echo "No previous build is kept on this VM."; exit 1; fi
+    sudo cp -f /opt/jqp/bin/dm-worker.mjs /opt/jqp/bin/dm-worker.mjs.bad
+    sudo cp -f /opt/jqp/bin/dm-worker.mjs.prev /opt/jqp/bin/dm-worker.mjs
+    if systemctl is-enabled --quiet jqp-dm-worker && [ ! -e "$HALT" ]; then sudo systemctl restart jqp-dm-worker; show_status; else echo "Rolled back the file. The worker is not enabled, so it was not started."; fi
+    ;;
   logs) sudo journalctl -u jqp-dm-worker -f -n 50 ;;
   test-email) run_as_jqp /etc/jqp/guard.env /opt/jqp/bin/vm-guard.mjs --test-email ;;
-  *) sed -n '2,8p' "$0"; exit 1 ;;
+  *) sed -n '2,12p' "$0"; exit 1 ;;
 esac

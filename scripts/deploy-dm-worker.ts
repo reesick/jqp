@@ -1,8 +1,8 @@
 // Ships the DM worker bundle to the VM and installs it. Run from your laptop; it uses the
 // OpenSSH tools that come with Windows 10/11 (ssh, scp).
 //
-//   npm run deploy-dm-worker -- --host ubuntu@1.2.3.4 --key ~/.ssh/oracle_key --install --push-env --push-guard-env
-//   npm run deploy-dm-worker -- --host ubuntu@1.2.3.4 --restart        (later: ship a new build)
+//   node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@1.2.3.4 --key ~/.ssh/oracle_key --install --push-env --push-guard-env
+//   node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@1.2.3.4 --restart        (later: ship a new build)
 //   add --dry-run to print the steps without doing anything
 //
 // Secrets: the env files are copied as files. This script never prints their contents, and the
@@ -21,14 +21,15 @@ const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(`--${name}`);
 const value = (name: string): string | undefined => {
   const i = argv.indexOf(`--${name}`);
-  return i >= 0 ? argv[i + 1] : undefined;
+  const v = i >= 0 ? argv[i + 1] : undefined;
+  return v && !v.startsWith("--") ? v : undefined;
 };
 
 const host = value("host");
 const key = value("key");
 const dry = flag("dry-run");
 if (!host || !/^[a-z_][a-z0-9_-]*@[A-Za-z0-9.:-]+$/i.test(host)) {
-  console.error("Usage: npm run deploy-dm-worker -- --host user@ip [--key path] [--install] [--push-env] [--push-guard-env] [--restart] [--dry-run]");
+  console.error("Usage: node --import tsx scripts/deploy-dm-worker.ts --host user@ip [--key path] [--install] [--push-env] [--push-guard-env] [--restart] [--dry-run]");
   process.exit(1);
 }
 const sshOpts = ["-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval=30", ...(key ? ["-i", key] : [])];
@@ -77,9 +78,10 @@ async function main(): Promise<void> {
     }
     checkWorkerEnv(file);
     scp(dir, [".env"], `${host}:${remoteDir}/worker.env`);
+    // The uploaded copy is removed even if the install step fails.
     ssh(
-      `sudo install -m 600 -o root -g root ${remoteDir}/worker.env /etc/jqp/worker.env && rm -f ${remoteDir}/worker.env && ` +
-        `(grep -q '^COMMENT_POLL_LOOKBACK_HOURS=' /etc/jqp/worker.env || echo 'COMMENT_POLL_LOOKBACK_HOURS=72' | sudo tee -a /etc/jqp/worker.env >/dev/null)`
+      `(sudo install -m 600 -o root -g root ${remoteDir}/worker.env /etc/jqp/worker.env; rc=$?; rm -f ${remoteDir}/worker.env; exit $rc) && ` +
+        `(sudo grep -q '^COMMENT_POLL_LOOKBACK_HOURS=' /etc/jqp/worker.env || echo 'COMMENT_POLL_LOOKBACK_HOURS=72' | sudo tee -a /etc/jqp/worker.env >/dev/null)`
     );
   }
 
@@ -92,17 +94,33 @@ async function main(): Promise<void> {
       console.error(`Cannot build the guard mail settings, missing in the root env file: ${missing.join(", ")}`);
       process.exit(1);
     }
-    const tmp = mkdtempSync(join(tmpdir(), "jqp-guard-"));
-    try {
-      writeFileSync(join(tmp, "guard.env"), names.filter((n) => all[n]).map((n) => `${n}=${all[n]}`).join("\n") + "\n", { mode: 0o600 });
-      scp(tmp, ["guard.env"]);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
+    if (dry) {
+      console.log("(dry run: the guard mail settings are not written to a file or sent)");
+    } else {
+      const tmp = mkdtempSync(join(tmpdir(), "jqp-guard-"));
+      try {
+        writeFileSync(join(tmp, "guard.env"), names.filter((n) => all[n]).map((n) => `${n}=${all[n]}`).join("\n") + "\n", { mode: 0o600 });
+        scp(tmp, ["guard.env"]);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     }
-    ssh(`sudo install -m 600 -o root -g root ${remoteDir}/guard.env /etc/jqp/guard.env && rm -f ${remoteDir}/guard.env`);
+    // Keep any GUARD_* threshold lines already set on the VM; only the mail settings are replaced.
+    ssh(
+      `sudo sh -c "grep '^GUARD_' /etc/jqp/guard.env >> ${remoteDir}/guard.env 2>/dev/null; true" && ` +
+        `(sudo install -m 600 -o root -g root ${remoteDir}/guard.env /etc/jqp/guard.env; rc=$?; rm -f ${remoteDir}/guard.env; exit $rc)`
+    );
   }
 
-  if (flag("restart")) ssh("sudo bash " + remoteDir + "/install.sh >/dev/null && sudo systemctl restart jqp-dm-worker && systemctl --no-pager --lines=5 status jqp-dm-worker");
+  // Restart only a worker that is meant to be running. One you stopped on purpose, or never started,
+  // stays stopped (use `jqp start` or `jqp resume` on the VM for that).
+  if (flag("restart")) {
+    ssh(
+      "sudo bash " + remoteDir + "/install.sh >/dev/null && " +
+        "(if systemctl is-enabled --quiet jqp-dm-worker && [ ! -e /var/lib/jqp-guard/halt ]; then sudo systemctl restart jqp-dm-worker && systemctl --no-pager --lines=5 status jqp-dm-worker; " +
+        "else echo 'Worker is not enabled or is halted, so it was not restarted. Use: jqp start / jqp resume'; fi)"
+    );
+  }
 
   console.log("\nDone. On the VM:  jqp check   then   jqp start   (jqp status shows the readings)");
 }

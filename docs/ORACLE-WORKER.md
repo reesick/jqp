@@ -65,12 +65,14 @@ Be clear about what can and cannot hit these lines. The VM's size is fixed by th
 
 1. The comment webhook runs on Vercel, not on the VM. A comment arriving while the worker is stopped is still received and put on the Redis queue.
 2. Redis keeps queued jobs. I checked the live Redis (2026-10-13, read-only): its eviction policy is `noeviction`, so it never silently drops jobs to make room, and it uses 2.6 MB. If it ever filled up it would refuse new jobs rather than delete old ones.
-3. A comment that never became a job is caught anyway. The worker's polling sweep asks Meta every 5 minutes for comments from the last 72 hours and queues any that were missed. When the worker comes back it catches up on everything from the last 3 days.
-4. The database allows one DM per comment, so catching up cannot double-send.
+3. A comment that never became a job is caught anyway, but only within 72 hours. The worker's polling sweep asks Meta every 5 minutes for comments from the last 72 hours and queues any that were missed. When the worker comes back it catches up on everything from the last 3 days.
+4. Duplicate protection is mostly, not perfectly, safe. The database allows one log row per comment, and the worker skips a comment whose DM is already marked SENT. That check reads first and writes after, so a crash in the instant between Meta accepting a DM and the worker recording it can send that one DM twice. This is rare, and it is the reason to avoid restarting the worker while a big backlog is draining.
 
-The limit that cannot be fixed afterwards is Meta's: a private reply must go out within 7 days of the comment. The critical email repeats every 6 hours while the worker is stopped. Resume within a few days and nothing is lost; after 7 days those replies can no longer be sent.
+**What is guaranteed and what is not.** Anything the Vercel webhook queued is kept until the worker runs. Anything it missed is recovered only if the worker is back within **72 hours**. Meta accepts private replies for 7 days after the comment, so between 3 and 7 days only the webhook-queued comments are safe. Treat 72 hours as your real deadline, and resume the same day if you can. The critical email repeats every 6 hours while the worker is stopped.
 
-Two caveats I could not remove: this Redis has no append-only file, so a Redis restart could in theory lose queued jobs (layer 3 recovers them from Meta within 72 hours), and the connection is the plain `redis://` one, so the traffic is not encrypted.
+**Resuming after a long stop** sends the whole backlog in a burst. The worker's own pacing (750 an hour) applies, but a sudden burst of identical DMs is something Meta's spam checks can notice, so for a big backlog resume in the daytime and watch `jqp logs` and the System page. If the cause of the stop is still there (for example the monthly outbound total is still over the limit), the guard stops the worker again within a minute; fix the cause first, or raise `GUARD_TRANSFER_HALT_PCT` for the rest of the month.
+
+Two caveats I could not remove: this Redis has no append-only file, so a Redis restart could in theory lose queued jobs (layer 3 recovers what it can from Meta within 72 hours), and the connection is the plain `redis://` one, so the traffic is not encrypted. The Redis facts above (eviction policy `noeviction`, 2.6 MB used) were read on 2026-10-13 and can change; `npm run check-redis` shows the current state.
 
 ## 3. Create the Oracle side (console, about 15 minutes)
 
@@ -89,7 +91,7 @@ Two caveats I could not remove: this Redis has no append-only file, so a Redis r
 In PowerShell, in `D:\jqp` (OpenSSH comes with Windows 11):
 
 ```
-npm run deploy-dm-worker -- --host ubuntu@<PUBLIC_IP> --key $HOME\.ssh\oracle_jqp --install --push-env --push-guard-env
+node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@<PUBLIC_IP> --key $HOME\.ssh\oracle_jqp --install --push-env --push-guard-env
 ```
 
 That builds the bundle, copies it, installs Node 22, a 2 GB swap file, a locked-down `jqp` user, the systemd units and a 100 MB cap on the system log, uploads the worker's env file (never printed; it refuses if `DATABASE_URL` is not on port 6543 or a key is missing), and uploads only the mail settings for the guard. `--dry-run` prints the steps without doing them. It does **not** start the worker.
@@ -116,6 +118,8 @@ jqp status         # service, guard timer and the current readings
 
 Do the phases in order. Each has a gate; do not move on until it passes. Total time about 2 hours, most of it waiting.
 
+**Important: the worker is not enabled until you run `jqp start`** (install and deploy never start it, and a reboot does not start it either). Drills 1 to 3 below need a running worker, and a running worker answers real comments and works through any backlog and the 72 hour poll. So run those three only after `jqp check` shows 0 jobs waiting and you are happy for it to run, ideally right at cut-over. Drills 4 to 6 (force stop, mail, dead VM) are safe before the worker has ever started.
+
 | Phase | Do | Gate (how you know) |
 |---|---|---|
 | 0. Before the VM | Put `MONITOR_TOKEN` (secret) and `MONITOR_URL` (variable) in GitHub and run the monitor workflow once. Rotate the Redis and Brevo keys if you have not. Make sure Oracle's emails reach an inbox you read. | Workflow run is green |
@@ -132,9 +136,9 @@ Do the phases in order. Each has a gate; do not move on until it passes. Total t
 | Drill | Do | Expected |
 |---|---|---|
 | Worker down | `sudo systemctl stop jqp-dm-worker`, wait 1 to 2 minutes | CRITICAL email "service is inactive". `jqp start` then gives an "OK again" email |
-| Crash restart | `sudo systemctl kill -s KILL jqp-dm-worker` | Worker back within about 10 seconds; maybe a WARNING |
+| Crash restart | `sudo systemctl kill -s KILL jqp-dm-worker` | Worker back within about 10 seconds. One crash is not emailed; two or more restarts between checks give a WARNING |
 | Reboot | `sudo reboot` | Worker starts by itself, and an INFO "VM rebooted" email arrives |
-| Force stop | `sudo -u jqp sh -c 'echo drill > /var/lib/jqp-guard/halt'` | Worker stops within seconds. `jqp start` refuses and points to `jqp resume`. After a reboot it stays stopped. `jqp resume` brings it back |
+| Force stop | `sudo -u jqp sh -c 'echo drill > /var/lib/jqp-guard/halt'` | Worker stops within seconds. `jqp start` refuses and points to `jqp resume`. After a reboot it stays stopped. `jqp resume` brings it back and it is still running 30 seconds later. Tested on the VM on 2026-10-13: the stop service fires on creating the file, is skipped when the file is deleted, and the worker unit refuses to start while the file exists |
 | Mail path | `jqp test-email` | Message arrives |
 | Dead VM | Stop the instance in the Oracle console for 40 minutes | Dashboard monitor emails that the worker heartbeat is stale. Start it again after |
 
@@ -156,11 +160,14 @@ Rollback of a bad deploy: check out the earlier commit, run the deploy command w
 
 | Task | Command |
 |---|---|
-| Ship a new build | `npm run deploy-dm-worker -- --host ubuntu@<IP> --key ... --restart` |
-| New database or Redis password | `npm run deploy-dm-worker -- --host ubuntu@<IP> --key ... --push-env --restart` |
+| Ship a new build | `node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@<IP> --key ... --restart` |
+| New database or Redis password | `node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@<IP> --key ... --push-env --restart` |
 | New mail key | same with `--push-guard-env` |
 | Start again after an automatic stop | `jqp resume` |
-| Stop sending DMs | `jqp stop` (comments queue in Redis and are answered on restart, within Meta's 7-day window) |
+| Stop sending DMs | `jqp stop` (it also disables the worker, so a reboot does not start it again; comments queue in Redis and are answered after `jqp start`, within the 72 hour catch-up window) |
+| Go back to the previous worker build | `jqp rollback` (the previous build is kept as `dm-worker.mjs.prev`) |
+
+`--restart` only restarts a worker that is enabled and not halted. A worker you stopped, or never started, stays stopped. `--push-guard-env` replaces only the mail settings and keeps any `GUARD_*` lines you added on the VM. On the first connection `ssh` trusts the VM's host key; compare it with the fingerprint shown on the instance's console connection page if you want to be sure before secrets are uploaded.
 | Look at the readings | `jqp status` |
 | Follow the log | `jqp logs` |
 

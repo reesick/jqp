@@ -1,5 +1,8 @@
 [Unit]
 Description=Stop the jqp DM worker (hard limit reached)
+# Only act while the stop file exists. The path unit also fires when the file is deleted
+# (jqp resume), and that must not stop the worker that was just started.
+ConditionPathExists=/var/lib/jqp-guard/halt
 
 [Service]
 Type=oneshot

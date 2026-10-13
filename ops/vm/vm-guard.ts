@@ -8,7 +8,7 @@
 // It is deliberately independent of the database and Redis, so it still emails you when
 // those are the thing that is broken. It only needs the ALERT_* mail settings.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import nodemailer from "nodemailer";
@@ -22,6 +22,7 @@ import {
   bodyFor,
   decide,
   emptyState,
+  normalizeState,
   gradeDisk,
   gradeMemory,
   gradeService,
@@ -68,18 +69,24 @@ function run(cmd: string, argv: string[]): string {
 
 function loadState(): GuardState {
   try {
-    const parsed = JSON.parse(readFileSync(STATE_FILE, "utf8")) as Partial<GuardState>;
-    return { ...emptyState(), ...parsed };
+    return normalizeState(JSON.parse(readFileSync(STATE_FILE, "utf8")));
   } catch {
     return emptyState();
   }
 }
 
-function saveState(state: GuardState): void {
-  mkdirSync(STATE_DIR, { recursive: true });
-  const tmp = `${STATE_FILE}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
-  renameSync(tmp, STATE_FILE);
+// Never throws: a full or read-only disk must not stop the checks, the halt or the mail.
+function saveState(state: GuardState): boolean {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    const tmp = `${STATE_FILE}.tmp`;
+    writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+    renameSync(tmp, STATE_FILE);
+    return true;
+  } catch (error) {
+    console.error("could not save state:", error instanceof Error ? error.message : "unknown error");
+    return false;
+  }
 }
 
 function mailConfig() {
@@ -132,12 +139,15 @@ async function main(): Promise<void> {
   const state = loadState();
 
   const transfer = accumulateTransfer(state.transfer, parseNetDevTx(readText("/proc/net/dev")), now);
-  const restartCount = Number(run("systemctl", ["show", "-p", "NRestarts", "--value", SERVICE])) || 0;
-  const restartDelta = state.restarts.lastCount === null ? 0 : Math.max(0, restartCount - state.restarts.lastCount);
+  // A failed `systemctl show` gives "", which must not be recorded as "0 restarts".
+  const rawRestarts = run("systemctl", ["show", "-p", "NRestarts", "--value", SERVICE]);
+  const restartCount = /^\d+$/.test(rawRestarts) ? Number(rawRestarts) : null;
+  const restartDelta = restartCount === null || state.restarts.lastCount === null ? 0 : Math.max(0, restartCount - state.restarts.lastCount);
   const dfOut = run("df", ["-P", "/"]);
+  const serviceState = run("systemctl", ["is-active", SERVICE]) || "unknown";
 
   const readings: Reading[] = [
-    gradeService(run("systemctl", ["is-active", SERVICE]) || "unknown", restartDelta, t),
+    gradeService(serviceState, restartDelta, t),
     gradeDisk(parseDfPercent(dfOut), t),
     gradeMemory(parseMeminfo(readText("/proc/meminfo")), t),
     gradeTransfer(transfer.bytes, t)
@@ -157,16 +167,41 @@ async function main(): Promise<void> {
   // a reboot does not bring it back). Queued comments stay in Redis; `jqp resume` undoes it.
   // Safety first: the file is written before any mail is attempted.
   const haltReasons = readings.filter((r) => r.halt);
+  let haltWriteFailed = false;
   if (haltReasons.length > 0 && !existsSync(HALT_FILE)) {
-    mkdirSync(STATE_DIR, { recursive: true });
-    writeFileSync(HALT_FILE, `${new Date(now).toISOString()} ${haltReasons.map((r) => r.id).join(",")}\n`, { mode: 0o644 });
+    try {
+      mkdirSync(STATE_DIR, { recursive: true });
+      writeFileSync(HALT_FILE, `${new Date(now).toISOString()} ${haltReasons.map((r) => r.id).join(",")}\n`, { mode: 0o644 });
+    } catch (error) {
+      haltWriteFailed = true;
+      console.error("could not write the stop file:", error instanceof Error ? error.message : "unknown error");
+    }
+  }
+  const haltActive = existsSync(HALT_FILE);
+  // Self-heal: the stop file exists but the worker is still running, so the path unit missed it.
+  // Touching the file fires the stop again.
+  if (haltActive && serviceState === "active") {
+    try {
+      utimesSync(HALT_FILE, new Date(), new Date());
+    } catch {
+      /* the next run tries again */
+    }
+  }
+  // Tell the owner once per stop. This is tied to the file, not to the moment it was written, so a
+  // failed mail is retried next minute instead of being lost.
+  const reasonText = haltReasons.length
+    ? haltReasons.map((r) => `${r.label}: ${r.detail}`).join("; ")
+    : `stop file present: ${readText(HALT_FILE).trim()}`;
+  if ((haltActive && !state.haltNotified) || haltWriteFailed) {
     alerts.push({
       kind: "problem",
       reading: {
         id: "halt",
-        label: "DM worker STOPPED automatically",
+        label: haltWriteFailed ? "DM worker NOT stopped (stop file could not be written)" : "DM worker STOPPED automatically",
         level: "crit",
-        detail: `${haltReasons.map((r) => `${r.label}: ${r.detail}`).join("; ")}. Queued comments are safe in Redis and will be answered after \`jqp resume\`.`
+        detail: haltWriteFailed
+          ? `${reasonText}. The stop file could not be written, so stop it by hand: sudo systemctl stop jqp-dm-worker.`
+          : `${reasonText}. Queued comments are safe in Redis and will be answered after \`jqp resume\`.`
       }
     });
   }
@@ -179,8 +214,9 @@ async function main(): Promise<void> {
   const next: GuardState = {
     checks,
     transfer,
-    restarts: { lastCount: restartCount },
-    bootId: bootId ?? state.bootId
+    restarts: { lastCount: restartCount ?? state.restarts.lastCount },
+    bootId: bootId ?? state.bootId,
+    haltNotified: haltActive ? state.haltNotified : false
   };
 
   if (alerts.length === 0) {
@@ -188,10 +224,17 @@ async function main(): Promise<void> {
     return;
   }
   const sent = await sendMail(subjectFor(alerts, host), bodyFor(alerts, host, now));
+  if (sent && haltActive) next.haltNotified = true;
   // If the mail did not go out, keep the old check states so the same alerts are tried again
   // next minute. The counters still move forward.
   saveState(sent ? next : { ...next, checks: state.checks, bootId: state.bootId });
   if (!sent) process.exitCode = 1;
 }
 
-void main();
+// Last resort: whatever goes wrong, try to say so by email, and never exit silently.
+main().catch(async (error) => {
+  const message = error instanceof Error ? error.message : "unknown error";
+  console.error("guard crashed:", message);
+  await sendMail(`[jqp VM ${os.hostname()}] CRITICAL: guard crashed`, `The VM guard hit an error and could not finish its checks.\n\n${message}\n\nCheck: sudo journalctl -u jqp-vm-guard -n 50`).catch(() => false);
+  process.exit(1);
+});

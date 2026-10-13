@@ -4,6 +4,8 @@ import {
   accumulateTransfer,
   bodyFor,
   decide,
+  emptyState,
+  normalizeState,
   gradeDisk,
   gradeMemory,
   gradeService,
@@ -102,6 +104,33 @@ describe("force stop", () => {
   });
   it("lets the halt thresholds be tuned", () => {
     expect(gradeDisk(90, { ...T, diskHaltPct: 90 }).halt).toBe(true);
+  });
+});
+
+describe("state file safety", () => {
+  it("falls back to an empty state for junk", () => {
+    for (const junk of [null, undefined, 5, "x", [], { transfer: null, checks: 3, restarts: "no" }]) {
+      expect(normalizeState(junk)).toEqual(emptyState());
+    }
+  });
+  it("keeps valid parts and drops invalid ones", () => {
+    const s = normalizeState({
+      checks: { disk: { level: "warn", since: 5, lastAlertAt: 6 }, bad: { level: "purple", since: 1 } },
+      transfer: { month: "2026-10", bytes: 123, lastCounter: 9 },
+      restarts: { lastCount: 4 },
+      bootId: "abc",
+      haltNotified: true
+    });
+    expect(s.checks).toEqual({ disk: { level: "warn", since: 5, lastAlertAt: 6 } });
+    expect(s.transfer).toEqual({ month: "2026-10", bytes: 123, lastCounter: 9 });
+    expect(s.restarts.lastCount).toBe(4);
+    expect(s.bootId).toBe("abc");
+    expect(s.haltNotified).toBe(true);
+  });
+  it("round-trips a real state", () => {
+    const s = emptyState();
+    s.transfer = { month: "2026-10", bytes: 77, lastCounter: 5 };
+    expect(normalizeState(JSON.parse(JSON.stringify(s)))).toEqual(s);
   });
 });
 
