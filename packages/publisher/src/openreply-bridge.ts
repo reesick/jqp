@@ -1,5 +1,6 @@
 import { getDb, rootLogger, NonRetryableError, RetryableError, type MatchMode } from "@jqp/core";
 import { automationIdForCampaign, deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
+import { dmTextWithLink } from "./message-text.js";
 
 /**
  * Writes directly into OpenReply's own `"Automation"` and
@@ -105,6 +106,8 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
     const now = new Date();
 
     const publicReplyMessages = campaign.public_reply_message ? [campaign.public_reply_message] : [];
+    // The destination link is not a separate field in OpenReply, so it travels inside the DM text.
+    const dmText = dmTextWithLink(campaign.dm_message, campaign.destination_url);
     const wholeWordMatch = toWholeWordMatch(campaign.match_mode);
     // OpenReply's own /api/automations validation requires matchAnyWord ||
     // keywords.length >= 1 — a campaign with neither matches nothing and
@@ -138,7 +141,7 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
           "keywords" = ${campaign.trigger_keywords},
           "matchAnyWord" = ${matchAnyWord},
           "wholeWordMatch" = ${wholeWordMatch},
-          "dmMessage" = ${campaign.dm_message},
+          "dmMessage" = ${dmText},
           "publicReplyEnabled" = ${campaign.public_reply_enabled},
           "publicReplyMessage" = ${campaign.public_reply_message ?? null},
           "publicReplyMessages" = ${publicReplyMessages},
@@ -178,7 +181,7 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
       ) values (
         ${automationId}, ${account.workspaceId}, ${account.id}, ${`jqp: ${post.campaign_id}`}, ${post.instagram_media_id},
         ${campaign.trigger_keywords}, ${matchAnyWord}, false, false, ${wholeWordMatch},
-        ${campaign.dm_message}, false, ${campaign.public_reply_enabled}, ${campaign.public_reply_message ?? null}, ${publicReplyMessages},
+        ${dmText}, false, ${campaign.public_reply_enabled}, ${campaign.public_reply_message ?? null}, ${publicReplyMessages},
         ${openingDmEnabled}, ${openingDmMessage}, ${openingDmButtonLabel},
         ${campaign.enabled}, ${now}, ${now}
       )

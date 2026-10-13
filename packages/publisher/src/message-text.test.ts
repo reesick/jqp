@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMessageText, normalizeOptionalMessage } from "./message-text.js";
+import { dmTextWithLink, normalizeMessageText, normalizeOptionalMessage } from "./message-text.js";
 
 describe("normalizeMessageText", () => {
   it("strips bold and italic markers but keeps the words", () => {
@@ -73,5 +73,18 @@ describe("normalizeOptionalMessage", () => {
     expect(normalizeOptionalMessage(null)).toBeNull();
     expect(normalizeOptionalMessage(undefined)).toBeNull();
     expect(normalizeOptionalMessage("  **  **  ")).toBeNull();
+  });
+});
+
+describe("dmTextWithLink", () => {
+  it("appends the destination link on its own line", () => {
+    expect(dmTextWithLink("Here you go", "https://example.com/x")).toBe("Here you go\n\nhttps://example.com/x");
+  });
+  it("does not repeat a link the message already has", () => {
+    expect(dmTextWithLink("Get it: https://example.com/x", "https://example.com/x")).toBe("Get it: https://example.com/x");
+  });
+  it("leaves the message alone without a link", () => {
+    expect(dmTextWithLink("Here you go", null)).toBe("Here you go");
+    expect(dmTextWithLink("Here you go", "  ")).toBe("Here you go");
   });
 });

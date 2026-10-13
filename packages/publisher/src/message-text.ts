@@ -64,6 +64,16 @@ export function normalizeMessageText(input: string, opts: NormalizeOptions = {})
   return text;
 }
 
+/**
+ * The text OpenReply actually sends as the link DM. The campaign's "destination link" is stored on our side only, so
+ * it has to be put into the message here: appended on its own line unless the message already contains it.
+ */
+export function dmTextWithLink(dmMessage: string, destinationUrl: string | null | undefined): string {
+  const url = destinationUrl?.trim();
+  if (!url || dmMessage.includes(url)) return dmMessage;
+  return `${dmMessage.trimEnd()}\n\n${url}`;
+}
+
 /** Like normalizeMessageText, but passes null/undefined through. */
 export function normalizeOptionalMessage(input: string | null | undefined, opts: NormalizeOptions = {}): string | null {
   if (input === null || input === undefined) return null;

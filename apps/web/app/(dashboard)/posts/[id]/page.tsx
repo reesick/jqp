@@ -34,6 +34,16 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
   const currentStepIndex = STEP_ORDER.indexOf(post.status);
   const failed = post.status === "FAILED" || post.status === "VALIDATION_FAILED";
 
+  // Instagram's published limits for a carousel caption: 2,200 characters, 30 hashtags, 2 to 10 slides.
+  const captionChars = [...(post.caption ?? "")].length;
+  const hashtagCount = (post.caption?.match(/#[\p{L}\p{N}_]+/gu) ?? []).length;
+  const captionWarnings: string[] = [];
+  if (captionChars > 2200) captionWarnings.push("The caption is over 2,200 characters, so Instagram would reject it.");
+  if (hashtagCount > 30) captionWarnings.push("More than 30 hashtags: Instagram would reject the caption.");
+  if (media.length < 2) captionWarnings.push("A carousel needs at least 2 images.");
+  if (media.length > 10) captionWarnings.push("A carousel can have at most 10 images.");
+  if (/[—–]/.test(post.caption ?? "")) captionWarnings.push("The caption has a long dash, which reads as AI-written. See the content guide.");
+
   return (
     <>
       <div className="page-header">
@@ -62,6 +72,36 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
           {failed ? " Fix the cause if it is in the folder or caption, then use Retry." : ""}
         </div>
       ) : null}
+
+      <div className="card">
+        <div className="card-title">Post preview</div>
+        <div className="post-preview">
+          {media.some((m) => m.public_url) ? (
+            <div className="post-preview-strip">
+              {media.map((m) =>
+                m.public_url ? (
+                  <img key={m.id} src={m.public_url} alt={`Slide ${m.sequence}`} loading="lazy" />
+                ) : null
+              )}
+            </div>
+          ) : (
+            <p className="muted u-text-sm">
+              {media.length} {media.length === 1 ? "image" : "images"} in the folder ({media.map((m) => m.original_filename).join(", ") || "none"}). Pictures appear here once they are uploaded, which happens when you publish.
+            </p>
+          )}
+          <p className="post-caption">{post.caption || "(no caption)"}</p>
+          <p className="muted u-text-sm">
+            {captionChars} of 2,200 characters, {hashtagCount} of 30 hashtags, {media.length} of 10 slides
+          </p>
+          {captionWarnings.length > 0 ? (
+            <ul className="dm-warnings">
+              {captionWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
 
       <div className="card">
         <div className="card-title">Pipeline progress</div>

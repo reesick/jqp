@@ -6,6 +6,7 @@ import type { PostRow } from "@jqp/core";
 import { Toggle } from "./toggle";
 import { Spinner } from "./spinner";
 import { useToast } from "./toast";
+import { DmPreview } from "./dm-preview";
 
 interface Props {
   posts: PostRow[];
@@ -195,6 +196,16 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
           <input type="text" value={publicReplyMessage} onChange={(e) => setPublicReplyMessage(e.target.value)} />
         </label>
       ) : null}
+
+      <DmPreview
+        openingDmEnabled={openingDmEnabled}
+        openingDmMessage={openingDmMessage}
+        openingDmButtonLabel={openingDmButtonLabel}
+        dmMessage={dmMessage}
+        destinationUrl={destinationUrl}
+        publicReplyEnabled={publicReplyEnabled}
+        publicReplyMessage={publicReplyMessage}
+      />
 
       <Toggle
         id="enabled-toggle"
