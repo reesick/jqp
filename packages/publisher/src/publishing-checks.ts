@@ -19,11 +19,13 @@ export function publishingChecks(facts: PublishingFacts, now = Date.now()): Serv
 
   // Publishing token: the one thing that is certain to run out, so say so well before it does.
   if (facts.tokens.length === 0) {
+    // Informational, not an alarm: publishing still works from the token in the worker's env file. It just
+    // cannot be renewed automatically or have its expiry watched until it is stored.
     out.push({
       key: "publish-token",
       label: "Publishing token",
-      state: "warn",
-      detail: "No Instagram account is stored for publishing, so its expiry is not tracked. Run: npm run connect-account"
+      state: "ok",
+      detail: "Publishing uses the token in the worker's env file; its expiry is not tracked. Run npm run connect-account to store it so it renews weekly"
     });
   } else {
     const days = facts.tokens.map((t) => (t.expiresAt ? Math.floor((Date.parse(t.expiresAt) - now) / DAY_MS) : null));

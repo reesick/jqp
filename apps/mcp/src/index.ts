@@ -358,16 +358,16 @@ server.registerTool(
   {
     title: "Retry a failed post",
     description: "Resets a FAILED or VALIDATION_FAILED post and queues it again. Call get_post first and fix the cause (for example a bad image) or it will fail the same way. Requires confirm: true.",
-    inputSchema: { postId: z.string().uuid(), confirm: CONFIRM },
+    inputSchema: { postId: z.string().uuid(), confirm: CONFIRM, confirmNotLive: z.boolean().optional().describe("Only after looking at the Instagram profile and seeing the post is NOT there. Needed when the failure says LIVE_CHECK_REQUIRED.") },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   },
-  safe(async ({ postId }) => {
+  safe(async ({ postId, confirmNotLive }) => {
     const post = await getPost(postId);
     if (!post) return fail("No post with that id.");
     if (post.status !== "FAILED" && post.status !== "VALIDATION_FAILED") return fail(`Post is ${post.status}; only FAILED or VALIDATION_FAILED posts can be retried.`);
-    const reset = await resetPostForRetry(postId);
-    if (!reset) return fail("This post already has an Instagram media id (or its state just changed), so it was not reset and nothing was queued. Check the Instagram profile first.");
-    const jobId = await enqueuePublishPost({ postId });
+    const reset = await resetPostForRetry(postId, { confirmNotLive: confirmNotLive === true });
+    if (!reset) return fail("This post was not reset and nothing was queued: it already has an Instagram media id, or its failure says Instagram may already show it (LIVE_CHECK_REQUIRED: look at the profile first, then call again with confirmNotLive), or its state just changed.");
+    const jobId = await enqueuePublishPost({ postId }, { retry: true });
     return ok({ queued: true, jobId, alreadyQueued: jobId === null });
   })
 );

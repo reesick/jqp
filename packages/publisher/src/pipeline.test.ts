@@ -8,6 +8,8 @@ vi.mock("@jqp/core", async (importOriginal) => {
 });
 
 const repo = {
+  LIVE_CHECK_REQUIRED: "LIVE_CHECK_REQUIRED:",
+  hasOtherUnpublishedPostWithCaption: vi.fn(),
   isInstagramMediaIdUsed: vi.fn(),
   getPost: vi.fn(),
   updatePostStatus: vi.fn(),
@@ -48,7 +50,7 @@ vi.mock("./scanner.js", () => scannerMock);
 const validatorMock = { validatePost: vi.fn() };
 vi.mock("./validator.js", () => validatorMock);
 
-const { runPublishPipeline, __resetIdentityCacheForTests } = await import("./pipeline.js");
+const { runPublishPipeline, __resetIdentityCacheForTests, __setLiveLookupDelayForTests } = await import("./pipeline.js");
 const { NonRetryableError, RetryableError } = await import("@jqp/core");
 
 function basePost(overrides: Partial<PostRow> = {}): PostRow {
@@ -86,6 +88,8 @@ beforeEach(() => {
   // Compare-and-set succeeds unless a test says another runner got there first.
   repo.updatePostStatus.mockResolvedValue(true);
   repo.isInstagramMediaIdUsed.mockResolvedValue(false);
+  repo.hasOtherUnpublishedPostWithCaption.mockResolvedValue(false);
+  __setLiveLookupDelayForTests(0);
   meta.getContainerStatus.mockResolvedValue({ status: "FINISHED" });
   meta.listRecentMedia.mockResolvedValue([]);
   meta.resolveInstagramAccount.mockResolvedValue({ igUserId: "ig_1", username: "acct" });
@@ -181,7 +185,7 @@ describe("runPublishPipeline — error classification", () => {
     meta.publishMedia.mockRejectedValue(new NonRetryableError("container expired", "CONTAINER_EXPIRED"));
 
     await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
-    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 
   it("rethrows a RetryableError without marking the post FAILED", async () => {
@@ -190,7 +194,7 @@ describe("runPublishPipeline — error classification", () => {
     meta.publishMedia.mockRejectedValue(new RetryableError("rate limited"));
 
     await expect(runPublishPipeline("post_1", "/fake")).rejects.toBeInstanceOf(RetryableError);
-    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 });
 
@@ -289,7 +293,7 @@ describe("publish safety", () => {
     await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
 
     expect(meta.publishMedia).not.toHaveBeenCalled();
-    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 
   it("does not publish a second copy when a post with the same caption is already live (Retry after a lost answer)", async () => {
@@ -344,7 +348,7 @@ describe("publish safety", () => {
     await runPublishPipeline("post_1", "/fake");
 
     expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "live_1" }), { from: ["PUBLISHING"] });
-    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 
   it("still fails the post on a 4xx when nothing is live", async () => {
@@ -353,7 +357,7 @@ describe("publish safety", () => {
 
     await runPublishPipeline("post_1", "/fake");
 
-    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 
   it("does not publish if the container status lookup fails (never publish blind)", async () => {
@@ -373,7 +377,7 @@ describe("publish safety", () => {
     await expect(runPublishPipeline("post_1", "/fake")).resolves.toBeUndefined();
 
     expect(meta.publishMedia).not.toHaveBeenCalled();
-    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }));
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED" }), expect.anything());
   });
 
   it("does not run the follow-ups twice if another runner already recorded the publish", async () => {
@@ -408,7 +412,7 @@ describe("wrong-account guard", () => {
 
     expect(meta.createChildContainer).not.toHaveBeenCalled();
     expect(meta.publishMedia).not.toHaveBeenCalled();
-    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED", errorMessage: expect.stringContaining("@old_account") }));
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "FAILED", errorMessage: expect.stringContaining("@old_account") }), expect.anything());
   });
 
   it("checks the account only once per token, not once per step", async () => {
@@ -419,5 +423,118 @@ describe("wrong-account guard", () => {
     await runPublishPipeline("post_1", "/fake");
 
     expect(meta.resolveInstagramAccount).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Findings from the independent code review.
+// ---------------------------------------------------------------------------------------------
+
+describe("review fixes: races and ambiguity", () => {
+  it("never overwrites a published post with FAILED when it lost a race (the failure write is guarded)", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "PUBLISHED" });
+    meta.listRecentMedia.mockResolvedValue([]);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    const failedWrite = repo.updatePostStatus.mock.calls.find((c) => c[1].status === "FAILED");
+    expect(failedWrite).toBeDefined();
+    // the third argument limits the write to statuses a post can still be moving through
+    expect(failedWrite![2].from).toContain("PUBLISHING");
+    expect(failedWrite![2].from).not.toContain("PUBLISHED");
+    expect(failedWrite![2].from).not.toContain("FAILED");
+  });
+
+  it("stops before touching Meta when another runner already recorded the post as published", async () => {
+    repo.getPost.mockResolvedValueOnce(publishing()).mockResolvedValue(basePost({ status: "PUBLISHED", instagram_media_id: "m_done" }));
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.getContainerStatus).not.toHaveBeenCalled();
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+  });
+
+  it("asks a human to look at Instagram when the container is published but the post cannot be found", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "PUBLISHED" });
+    meta.listRecentMedia.mockResolvedValue([]);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    const failed = repo.updatePostStatus.mock.calls.find((c) => c[1].status === "FAILED")!;
+    expect(failed[1].errorMessage.startsWith("LIVE_CHECK_REQUIRED:")).toBe(true);
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+  });
+
+  it("looks a few times before deciding a published container has no matching post", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "PUBLISHED" });
+    meta.listRecentMedia.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([liveItem()]);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.listRecentMedia).toHaveBeenCalledTimes(3);
+    expect(repo.updatePostStatus).toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED", instagramMediaId: "live_1" }), { from: ["PUBLISHING"] });
+  });
+
+  it("does not attach a live post to this one when another unpublished post has the same caption", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.listRecentMedia.mockResolvedValue([liveItem()]);
+    repo.hasOtherUnpublishedPostWithCaption.mockResolvedValue(true);
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    expect(repo.updatePostStatus).not.toHaveBeenCalledWith("post_1", expect.objectContaining({ status: "PUBLISHED" }), expect.anything());
+    const failed = repo.updatePostStatus.mock.calls.find((c) => c[1].status === "FAILED")!;
+    expect(failed[1].errorMessage.startsWith("LIVE_CHECK_REQUIRED:")).toBe(true);
+  });
+
+  it("does not match a post whose caption is empty or whose timestamp cannot be read", async () => {
+    repo.getPost.mockResolvedValue(basePost({ status: "PUBLISHING", carousel_container_id: "c1", caption: "" }));
+    meta.listRecentMedia.mockResolvedValue([liveItem({ caption: "" })]);
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+    await runPublishPipeline("post_1", "/fake");
+    expect(meta.publishMedia).toHaveBeenCalledTimes(1);
+
+    vi.clearAllMocks();
+    repo.updatePostStatus.mockResolvedValue(true);
+    repo.getPost.mockResolvedValue(publishing());
+    repo.getCampaignByPostId.mockResolvedValue(null);
+    repo.resolveAccountForPost.mockResolvedValue({ igUserId: "ig_1", accessToken: "token" });
+    meta.getContainerStatus.mockResolvedValue({ status: "FINISHED" });
+    meta.resolveInstagramAccount.mockResolvedValue({ igUserId: "ig_1", username: "acct" });
+    __resetIdentityCacheForTests();
+    meta.listRecentMedia.mockResolvedValue([liveItem({ timestamp: "not a date" })]);
+    meta.publishMedia.mockResolvedValue({ id: "new_2" });
+    await runPublishPipeline("post_1", "/fake");
+    expect(meta.publishMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails fast on a dead container instead of calling publish", async () => {
+    repo.getPost.mockResolvedValue(publishing());
+    meta.getContainerStatus.mockResolvedValue({ status: "EXPIRED" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).not.toHaveBeenCalled();
+    const failed = repo.updatePostStatus.mock.calls.find((c) => c[1].status === "FAILED")!;
+    expect(failed[1].errorMessage).toContain("EXPIRED");
+  });
+
+  it("falls back to the env token when Instagram rejects the stored one", async () => {
+    const { AuthError } = await import("@jqp/core");
+    repo.getPost.mockResolvedValue(publishing());
+    repo.resolveAccountForPost.mockResolvedValue({ igUserId: "ig_1", accessToken: "stored_old", envFallbackToken: "env_new" });
+    meta.resolveInstagramAccount.mockImplementation(async (token: string) => {
+      if (token === "stored_old") throw new AuthError("token invalid");
+      return { igUserId: "ig_1", username: "acct" };
+    });
+    meta.publishMedia.mockResolvedValue({ id: "new_1" });
+
+    await runPublishPipeline("post_1", "/fake");
+
+    expect(meta.publishMedia).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "env_new" }));
   });
 });

@@ -289,14 +289,15 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
     ),
     soft(
       sql<{ failed: number; stuck: number }[]>`
-        select count(*) filter (where c.sync_status::text = 'DM_SYNC_FAILED')::int as failed,
+        select count(*) filter (where c.enabled and c.sync_status::text = 'DM_SYNC_FAILED')::int as failed,
                count(*) filter (where c.enabled and p.status::text = 'PUBLISHED' and c.sync_status::text <> 'DM_SYNCED' and c.sync_status::text <> 'DM_SYNC_FAILED' and p.published_at < now() - interval '15 minutes')::int as stuck
         from campaigns c join posts p on p.id = c.post_id`,
       [{ failed: 0, stuck: 0 }]
     ),
     soft(
       sql<{ username: string | null; token_expires_at: string | null }[]>`
-        select username, token_expires_at from ig_accounts where is_active and access_token_encrypted is not null`,
+        select username, token_expires_at from ig_accounts
+        where is_active and access_token_encrypted is not null and ig_user_id = ${loadEnv().META_IG_USER_ID}`,
       [] as { username: string | null; token_expires_at: string | null }[]
     )
   ]);

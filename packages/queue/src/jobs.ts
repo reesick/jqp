@@ -61,7 +61,7 @@ export async function ensureQueues(): Promise<void> {
   }
 }
 
-export async function enqueuePublishPost(data: PublishPostJobData): Promise<string | null> {
+export async function enqueuePublishPost(data: PublishPostJobData, options: { retry?: boolean } = {}): Promise<string | null> {
   const boss = await getBoss();
   // Retry schedule sized for Meta throttles, which last minutes to hours, not seconds: 8 retries with exponential
   // backoff from 60s (about 1, 2, 4, 8, 16, 32, 64, 128 minutes) cover roughly four hours before the job gives up
@@ -73,7 +73,8 @@ export async function enqueuePublishPost(data: PublishPostJobData): Promise<stri
   // already-live post). expireInSeconds is 15 minutes because one job runs the whole upload, container and publish
   // sequence, which can take several minutes when Meta is slow.
   return boss.send(QUEUE.PUBLISH_POST, data, {
-    singletonKey: `post:${data.postId}`,
+    // A Retry is a deliberate new attempt after a reset, so it gets its own key and cannot be swallowed by the double-click throttle.
+    singletonKey: options.retry ? `post:${data.postId}:retry:${Date.now()}` : `post:${data.postId}`,
     singletonSeconds: 30,
     expireInSeconds: 900,
     retryLimit: 8,

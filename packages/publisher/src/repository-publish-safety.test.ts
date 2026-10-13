@@ -21,6 +21,9 @@ function mockSql(strings: TemplateStringsArray, ...values: unknown[]) {
   return Promise.resolve(nextRows.shift() ?? []);
 }
 
+// postgres.js transactions: run the callback with the same tagged-template function.
+(mockSql as unknown as { begin: (fn: (tx: typeof mockSql) => unknown) => unknown }).begin = async (fn) => fn(mockSql);
+
 vi.mock("@jqp/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@jqp/core")>();
   return {
@@ -69,6 +72,20 @@ describe("resetPostForRetry", () => {
     expect(calls[1]!.text).toContain("update post_media set child_container_id = null");
   });
 
+  it("will not reset a post whose failure says Instagram may already show it, unless the caller confirms", async () => {
+    nextRows = [[]];
+    expect(await resetPostForRetry("post_1")).toBe(false);
+    const call = calls[0]!;
+    expect(call.text).toContain("not like");
+    expect(call.values).toContain("LIVE_CHECK_REQUIRED:%");
+    expect(call.values).toContain(false); // confirmNotLive not given
+
+    calls.length = 0;
+    nextRows = [[{ id: "post_1" }], []];
+    expect(await resetPostForRetry("post_1", { confirmNotLive: true })).toBe(true);
+    expect(calls[0]!.values).toContain(true);
+  });
+
   it("does nothing, and clears no containers, for a post that is not in a failed state or is already live", async () => {
     nextRows = [[]];
     expect(await resetPostForRetry("post_1")).toBe(false);
@@ -88,7 +105,7 @@ describe("isInstagramMediaIdUsed", () => {
 describe("resolveAccountForPost default account", () => {
   it("prefers the stored (refreshed) token of the default account over the env token", async () => {
     nextRows = [[{ ig_user_id: "ig_default", access_token_encrypted: "stored", access_token_iv: "iv", access_token_tag: "tag", is_active: true }]];
-    expect(await resolveAccountForPost(post)).toEqual({ igUserId: "ig_default", accessToken: "decrypted:stored" });
+    expect(await resolveAccountForPost(post)).toEqual({ igUserId: "ig_default", accessToken: "decrypted:stored", envFallbackToken: "env_token" });
   });
 
   it("falls back to the env token when nothing is stored", async () => {

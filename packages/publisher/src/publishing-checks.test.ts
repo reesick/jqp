@@ -19,10 +19,12 @@ describe("publishing token check", () => {
     expect(row.state).toBe("down");
     expect(row.detail).toContain("expired");
   });
-  it("warns, with the fix, when no account is stored or the expiry is unknown", () => {
+  it("does not raise an alarm when no account is stored yet, but says how to fix it", () => {
     const none = find(publishingChecks(facts({ tokens: [] }), NOW), "publish-token");
-    expect(none.state).toBe("warn");
+    expect(none.state).toBe("ok");
     expect(none.detail).toContain("npm run connect-account");
+  });
+  it("warns when the stored account has no known expiry", () => {
     expect(find(publishingChecks(facts({ tokens: [{ username: "a", expiresAt: null }] }), NOW), "publish-token").state).toBe("warn");
   });
   it("judges by the soonest expiry when several accounts are stored", () => {

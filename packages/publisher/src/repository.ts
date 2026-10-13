@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   getDb,
   decryptSecret,
@@ -110,11 +111,41 @@ export async function updatePostStatus(postId: string, update: PostStatusUpdate,
   return rows.length > 0;
 }
 
-/** True if some post already carries this Instagram media id (so a lookup never claims another post's media). */
-export async function isInstagramMediaIdUsed(mediaId: string): Promise<boolean> {
+/**
+ * True if a post OTHER than `excludePostId` already carries this Instagram media id (so a lookup never claims
+ * another post's media, but a post's own recorded media id does not count against itself).
+ */
+export async function isInstagramMediaIdUsed(mediaId: string, excludePostId?: string): Promise<boolean> {
   const sql = getDb();
-  const rows = await sql<{ id: string }[]>`select id from posts where instagram_media_id = ${mediaId} limit 1`;
+  const rows = await sql<{ id: string }[]>`
+    select id from posts where instagram_media_id = ${mediaId} and id::text <> ${excludePostId ?? ""} limit 1
+  `;
   return rows.length > 0;
+}
+
+/** True if another post that is not published yet has the same caption (whitespace-insensitive). Template captions make a caption match ambiguous. */
+export async function hasOtherUnpublishedPostWithCaption(postId: string, caption: string): Promise<boolean> {
+  const sql = getDb();
+  const wanted = caption.replace(/\s+/g, " ").trim();
+  const rows = await sql<{ id: string }[]>`
+    select id from posts
+    where id::text <> ${postId} and status::text <> 'PUBLISHED'
+      and trim(regexp_replace(caption, '[[:space:]]+', ' ', 'g')) = ${wanted}
+    limit 1
+  `;
+  return rows.length > 0;
+}
+
+/** Marker at the start of a failure message that means "a human must look at Instagram before this post is retried". */
+export const LIVE_CHECK_REQUIRED = "LIVE_CHECK_REQUIRED:";
+
+/** A stable UUID for a campaign's automation (name-based, version 5 layout), so creating it twice yields the same row. */
+export function automationIdForCampaign(campaignId: string): string {
+  const hash = createHash("sha1").update(`jqp-automation:${campaignId}`).digest();
+  hash[6] = (hash[6]! & 0x0f) | 0x50;
+  hash[8] = (hash[8]! & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 /**
@@ -123,18 +154,23 @@ export async function isInstagramMediaIdUsed(mediaId: string): Promise<boolean> 
  *
  * The old containers are cleared too: Instagram containers expire after about a day and an errored one stays errored,
  * so reusing them made a failed post fail the same way on every retry. A post that already has an Instagram media id
- * is live and is never reset. Returns true if the post was reset.
+ * is live and is never reset. A post whose failure says LIVE_CHECK_REQUIRED (Instagram may already show it) is
+ * not reset either, unless the caller passes confirmNotLive after looking at the profile. Returns true if reset.
  */
-export async function resetPostForRetry(postId: string): Promise<boolean> {
+export async function resetPostForRetry(postId: string, options: { confirmNotLive?: boolean } = {}): Promise<boolean> {
   const sql = getDb();
-  const rows = await sql<{ id: string }[]>`
-    update posts set status = 'DISCOVERED', error_message = null, carousel_container_id = null
-    where id = ${postId} and status in ('FAILED', 'VALIDATION_FAILED') and instagram_media_id is null
-    returning id
-  `;
-  if (rows.length === 0) return false;
-  await sql`update post_media set child_container_id = null, container_status = 'PENDING' where post_id = ${postId}`;
-  return true;
+  const liveCheck = `${LIVE_CHECK_REQUIRED}%`;
+  return sql.begin(async (tx) => {
+    const rows = await tx<{ id: string }[]>`
+      update posts set status = 'DISCOVERED', error_message = null, carousel_container_id = null
+      where id = ${postId} and status in ('FAILED', 'VALIDATION_FAILED') and instagram_media_id is null
+        and (${options.confirmNotLive === true} or coalesce(error_message, '') not like ${liveCheck})
+      returning id
+    `;
+    if (rows.length === 0) return false;
+    await tx`update post_media set child_container_id = null, container_status = 'PENDING' where post_id = ${postId}`;
+    return true;
+  }) as Promise<boolean>;
 }
 
 // --------------------------------------------------------------------
@@ -181,6 +217,8 @@ export async function setPostMediaContainerStatus(id: string, status: ContainerS
 export interface ResolvedAccount {
   igUserId: string;
   accessToken: string;
+  /** Set when a stored token was chosen and the env bootstrap token is also available, so a rejected stored token can fall back. */
+  envFallbackToken?: string;
 }
 
 /**
@@ -232,13 +270,14 @@ export async function resolveAccountForPost(post: PostRow): Promise<ResolvedAcco
   if (env.META_IG_USER_ID) {
     const stored = await sql<StoredAccountRow[]>`
       select ig_user_id, access_token_encrypted, access_token_iv, access_token_tag, is_active
-      from ig_accounts where ig_user_id = ${env.META_IG_USER_ID} and is_active
+      from ig_accounts
+      where ig_user_id = ${env.META_IG_USER_ID} and is_active and (token_expires_at is null or token_expires_at > now())
     `;
     const row = stored[0];
     if (row?.access_token_encrypted && row.access_token_iv && row.access_token_tag) {
       try {
         const accessToken = decryptSecret({ ciphertext: row.access_token_encrypted, iv: row.access_token_iv, authTag: row.access_token_tag });
-        return { igUserId: row.ig_user_id, accessToken };
+        return { igUserId: row.ig_user_id, accessToken, envFallbackToken: env.META_LONG_LIVED_ACCESS_TOKEN || undefined };
       } catch {
         /* fall through to the bootstrap token */
       }
@@ -334,6 +373,11 @@ export async function upsertCampaign(params: UpsertCampaignParams): Promise<Camp
     // If this throws, nothing has changed on our side, the caller sees an error, and the campaign
     // stays enabled. The reverse order could show "off" while OpenReply kept sending.
     if (existing?.openreply_automation_id) await deactivateOpenReplyAutomation(existing.openreply_automation_id);
+    // A sync that created the automation but failed before saving its id leaves no ledger entry. The id is derived
+    // from the campaign, so switch that one off too (a no-op when it does not exist).
+    if (existing && existing.openreply_automation_id !== automationIdForCampaign(existing.id)) {
+      await deactivateOpenReplyAutomation(automationIdForCampaign(existing.id));
+    }
   }
   const sql = getDb();
   // Opening-DM text fields are normalised to NULL when the toggle is off, not

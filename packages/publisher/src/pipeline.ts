@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { rootLogger, loadEnv, ValidationError, NonRetryableError, AuthError, type Logger, type PostRow } from "@jqp/core";
+import { rootLogger, loadEnv, ValidationError, NonRetryableError, AuthError, type Logger, type PostRow, type PostStatus } from "@jqp/core";
 import { recordEvent } from "./events.js";
 import { uploadPostMedia, preflightMediaUrl, deletePostMedia } from "@jqp/storage";
 import {
@@ -25,8 +25,29 @@ import {
   setPostMediaContainer,
   resolveAccountForPost,
   getCampaignByPostId,
-  isInstagramMediaIdUsed
+  isInstagramMediaIdUsed,
+  hasOtherUnpublishedPostWithCaption,
+  LIVE_CHECK_REQUIRED
 } from "./repository.js";
+
+/** Statuses a post can still be moving through. A failure may only be written from one of these, never over PUBLISHED. */
+const ACTIVE_STATUSES: PostStatus[] = [
+  "DISCOVERED",
+  "VALIDATING",
+  "UPLOADING",
+  "CREATING_CHILDREN",
+  "WAITING_FOR_CHILDREN",
+  "CREATING_CAROUSEL",
+  "WAITING_FOR_CAROUSEL",
+  "PUBLISHING"
+];
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+let liveLookupDelayMs = 2000;
+/** Test hook: shorten the wait between "is it live yet?" lookups. */
+export function __setLiveLookupDelayForTests(ms: number): void {
+  liveLookupDelayMs = ms;
+}
 
 /** Thrown when another runner advanced the same post first; this runner stops quietly and leaves the post to it. */
 export class ConcurrentRunError extends Error {
@@ -45,13 +66,21 @@ const IDENTITY_TTL_MS = 10 * 60_000;
  * The answer is cached for 10 minutes per token so a post does not cost one call per step.
  */
 async function resolveVerifiedAccount(post: PostRow): Promise<{ igUserId: string; accessToken: string }> {
-  const account = await resolveAccountForPost(post);
+  let account = await resolveAccountForPost(post);
   if (loadEnv().MOCK_META) return account;
   const key = `${account.igUserId}:${account.accessToken.slice(-10)}`;
   const seen = identityCache.get(key);
   if (seen && Date.now() - seen < IDENTITY_TTL_MS) return account;
 
-  const actual = await resolveInstagramAccount(account.accessToken);
+  let actual;
+  try {
+    actual = await resolveInstagramAccount(account.accessToken);
+  } catch (err) {
+    // A stored token that Instagram rejects (revoked, replaced by hand) must not block a good env token.
+    if (!(err instanceof AuthError) || !account.envFallbackToken || account.envFallbackToken === account.accessToken) throw err;
+    actual = await resolveInstagramAccount(account.envFallbackToken);
+    account = { igUserId: account.igUserId, accessToken: account.envFallbackToken };
+  }
   if (actual.igUserId !== account.igUserId) {
     throw new NonRetryableError(
       `The Instagram token belongs to ${actual.username ? "@" + actual.username : "account " + actual.igUserId}, but this post is set to publish as account ${account.igUserId}. Nothing was published. Run: npm run connect-account`,
@@ -59,8 +88,8 @@ async function resolveVerifiedAccount(post: PostRow): Promise<{ igUserId: string
       { expected: account.igUserId, actual: actual.igUserId }
     );
   }
-  identityCache.set(key, Date.now());
-  return account;
+  identityCache.set(`${account.igUserId}:${account.accessToken.slice(-10)}`, Date.now());
+  return { igUserId: account.igUserId, accessToken: account.accessToken };
 }
 
 /** Test hook: forget which tokens were verified. */
@@ -149,7 +178,7 @@ export async function runPublishPipeline(postId: string, folderPathOverride?: st
     }
     if (err instanceof ValidationError) {
       // Should have been caught inside stepValidate already, but guard here too.
-      await updatePostStatus(postId, { status: "VALIDATION_FAILED", errorMessage: err.message });
+      await updatePostStatus(postId, { status: "VALIDATION_FAILED", errorMessage: err.message }, { from: ACTIVE_STATUSES });
       log.warn("publish_pipeline_validation_failed", { error: err.message });
       void recordEvent({ level: "warn", source: "publish", code: "post_validation_failed", message: err.message, meta: { postId } });
       return;
@@ -157,7 +186,8 @@ export async function runPublishPipeline(postId: string, folderPathOverride?: st
     // NonRetryableError covers AuthError too (AuthError extends NonRetryableError) — both are terminal, a retry cannot fix either.
     if (err instanceof NonRetryableError) {
       const message = err.message;
-      await updatePostStatus(postId, { status: "FAILED", errorMessage: message });
+      // Only from a still-active status: a runner that lost a race must never mark an already published post FAILED.
+      await updatePostStatus(postId, { status: "FAILED", errorMessage: message }, { from: ACTIVE_STATUSES });
       log.error("publish_pipeline_failed_terminal", { error: message });
       void recordEvent({ level: "error", source: "publish", code: "post_publish_failed", message, meta: { postId } });
       return;
@@ -175,7 +205,7 @@ async function stepValidate(post: PostRow, folderPath: string, log: Logger): Pro
 
   if (!result.valid) {
     const message = result.issues.map((i) => `${i.code}: ${i.message}`).join("; ");
-    await updatePostStatus(post.id, { status: "VALIDATION_FAILED", errorMessage: message });
+    await updatePostStatus(post.id, { status: "VALIDATION_FAILED", errorMessage: message }, { from: ACTIVE_STATUSES });
     log.warn("post_validation_failed", { issues: result.issues });
     return { ...post, status: "VALIDATION_FAILED", error_message: message };
   }
@@ -292,24 +322,59 @@ const parseInstagramTime = (ts: string): number => Date.parse(ts.replace(/([+-]\
 
 /**
  * Looks for a post that is already live on the account for this folder: same caption, published after our
- * row was created, and not already recorded against another post. This is what makes a publish whose answer
- * got lost (or a Retry of a post that did go out) safe: the pipeline records the live post instead of
- * publishing a second copy.
+ * row was created, with a readable timestamp, and not already recorded against ANOTHER post (this post's own
+ * recorded media id does not count against it). This is what makes a publish whose answer got lost safe: the
+ * pipeline records the live post instead of publishing a second copy.
  */
 async function findLiveMedia(post: PostRow, igUserId: string, accessToken: string): Promise<string | null> {
-  const since = Date.parse(post.created_at);
+  const since = new Date(post.created_at).getTime();
+  if (!Number.isFinite(since)) return null;
   const wanted = normalizeCaption(post.caption);
+  if (!wanted) return null; // an empty caption cannot be matched; the caller treats "not found" as "ask a human"
   const recent = await listRecentMedia(igUserId, accessToken, 25);
   for (const item of recent) {
     if (!item.caption || normalizeCaption(item.caption) !== wanted) continue;
-    if (item.timestamp && Number.isFinite(since) && parseInstagramTime(item.timestamp) < since) continue;
-    if (await isInstagramMediaIdUsed(item.id)) continue;
+    const at = item.timestamp ? parseInstagramTime(item.timestamp) : NaN;
+    if (!Number.isFinite(at) || at < since) continue;
+    if (await isInstagramMediaIdUsed(item.id, post.id)) continue;
     return item.id;
   }
   return null;
 }
 
+/** Instagram's media list can lag a moment behind a publish, so a "published" container gets a few lookups before we give up. */
+async function findLiveMediaWithRetries(post: PostRow, igUserId: string, accessToken: string): Promise<string | null> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const found = await findLiveMedia(post, igUserId, accessToken);
+    if (found) return found;
+    if (attempt < 3) await sleep(liveLookupDelayMs);
+  }
+  return null;
+}
+
+/**
+ * A caption match alone is not proof that a live post is THIS post. If another unpublished post has the same
+ * caption (template captions), refuse and ask a human, rather than risk wiring DMs to the wrong post.
+ */
+async function adoptLiveMedia(post: PostRow, mediaId: string): Promise<string> {
+  if (await hasOtherUnpublishedPostWithCaption(post.id, post.caption)) {
+    throw new NonRetryableError(
+      `${LIVE_CHECK_REQUIRED} A post with this caption is already live on the account (media ${mediaId}), and another unpublished post has the same caption, so it cannot be told which one this is. Nothing was published. Look at the Instagram profile, change one caption, then retry.`,
+      "LIVE_CHECK_REQUIRED",
+      { postId: post.id, mediaId }
+    );
+  }
+  return mediaId;
+}
+
 async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
+  // Another runner may have finished this post since we read it. Stop before touching Meta.
+  const fresh = await getPost(post.id);
+  if (fresh && (fresh.status === "PUBLISHED" || fresh.instagram_media_id)) {
+    log.warn("post_already_published_by_another_runner", { instagramMediaId: fresh.instagram_media_id });
+    return fresh;
+  }
+
   const { igUserId, accessToken } = await resolveVerifiedAccount(post);
   if (!post.carousel_container_id) throw new Error(`stepPublish: post ${post.id} has no carousel_container_id`);
 
@@ -317,19 +382,29 @@ async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
   //    publishing, not after. A failed status lookup is a retryable error and stops here: never publish blind.
   let mediaId: string | null = null;
   const container = await getContainerStatus(post.carousel_container_id, accessToken);
+  if (container.status === "EXPIRED" || container.status === "ERROR") {
+    throw new NonRetryableError(
+      `The Instagram container for this post is ${container.status}${container.statusDetail ? ` (${container.statusDetail})` : ""}. Nothing was published. Retry to build a fresh one.`,
+      container.status === "EXPIRED" ? "CONTAINER_EXPIRED" : "CONTAINER_ERROR",
+      { postId: post.id }
+    );
+  }
   if (container.status === "PUBLISHED") {
-    mediaId = await findLiveMedia(post, igUserId, accessToken);
+    mediaId = await findLiveMediaWithRetries(post, igUserId, accessToken);
     if (!mediaId) {
       throw new NonRetryableError(
-        "Instagram says this container was already published, but the post could not be found in the account's recent media. Nothing more was published. Check the Instagram profile, then fix the post by hand.",
+        `${LIVE_CHECK_REQUIRED} Instagram says this container was already published, but the post could not be found in the account's recent media. Nothing more was published. Look at the Instagram profile: if the post is there, record it by hand; if it is not, retry with confirmation.`,
         "PUBLISHED_MEDIA_NOT_FOUND",
         { postId: post.id }
       );
     }
     log.warn("container_already_published_recording_existing_media", { instagramMediaId: mediaId });
   } else {
-    mediaId = await findLiveMedia(post, igUserId, accessToken);
-    if (mediaId) log.warn("matching_post_already_live_not_publishing_again", { instagramMediaId: mediaId });
+    const candidate = await findLiveMedia(post, igUserId, accessToken);
+    if (candidate) {
+      mediaId = await adoptLiveMedia(post, candidate);
+      log.warn("matching_post_already_live_not_publishing_again", { instagramMediaId: mediaId });
+    }
   }
 
   // 2. Publish (a single HTTP attempt; see publishMedia).
@@ -342,7 +417,7 @@ async function stepPublish(post: PostRow, log: Logger): Promise<PostRow> {
         const live = await findLiveMedia(post, igUserId, accessToken);
         if (!live) throw err;
         log.warn("publish_rejected_but_post_is_live", { instagramMediaId: live });
-        mediaId = live;
+        mediaId = await adoptLiveMedia(post, live);
       } else {
         throw err;
       }

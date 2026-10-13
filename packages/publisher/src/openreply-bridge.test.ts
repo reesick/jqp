@@ -32,7 +32,11 @@ const repo = {
   resolveIgUserIdForPost: vi.fn(),
   updateCampaignSync: vi.fn()
 };
-vi.mock("./repository.js", () => repo);
+vi.mock("./repository.js", async () => {
+  // The id helper is pure; use the real one so the bridge and the tests agree on the derived ids.
+  const actual = await vi.importActual<typeof import("./repository.js")>("./repository.js");
+  return { ...repo, automationIdForCampaign: actual.automationIdForCampaign };
+});
 
 const { syncCampaignToOpenReply, automationIdForCampaign } = await import("./openreply-bridge.js");
 

@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { getDb, rootLogger, NonRetryableError, RetryableError, type MatchMode } from "@jqp/core";
-import { deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
+import { automationIdForCampaign, deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
 
 /**
  * Writes directly into OpenReply's own `"Automation"` and
@@ -31,14 +30,7 @@ import { deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdFor
  * integration).
  */
 
-/** A stable UUID for a campaign's automation (name-based, version 5 layout), so creating it twice yields the same row. */
-export function automationIdForCampaign(campaignId: string): string {
-  const hash = createHash("sha1").update(`jqp-automation:${campaignId}`).digest();
-  hash[6] = (hash[6]! & 0x0f) | 0x50;
-  hash[8] = (hash[8]! & 0x3f) | 0x80;
-  const hex = hash.subarray(0, 16).toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
+export { automationIdForCampaign };
 
 interface OpenReplyAccount {
   id: string;
@@ -153,7 +145,7 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
           "openingDmEnabled" = ${openingDmEnabled},
           "openingDmMessage" = ${openingDmMessage},
           "openingDmButtonLabel" = ${openingDmButtonLabel},
-          "isActive" = ${campaign.enabled},
+          "isActive" = coalesce((select "enabled" from campaigns where "id" = ${campaign.id}), ${campaign.enabled}),
           "updatedAt" = ${now}
         where "id" = ${campaign.openreply_automation_id}
       `;
@@ -172,7 +164,7 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
     // two active automations on one post (which would answer every comment twice).
     const already = await sql<{ id: string }[]>`
       select "id" from "Automation"
-      where "instagramAccountId" = ${account.id} and "postId" = ${post.instagram_media_id}
+      where "instagramAccountId" = ${account.id} and "postId" = ${post.instagram_media_id} and "name" like 'jqp:%'
       order by "createdAt" asc limit 1
     `;
     const automationId = already[0]?.id ?? automationIdForCampaign(campaign.id);
@@ -202,7 +194,7 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
         "openingDmEnabled" = excluded."openingDmEnabled",
         "openingDmMessage" = excluded."openingDmMessage",
         "openingDmButtonLabel" = excluded."openingDmButtonLabel",
-        "isActive" = excluded."isActive",
+        "isActive" = coalesce((select "enabled" from campaigns where "id" = ${campaign.id}), excluded."isActive"),
         "updatedAt" = excluded."updatedAt"
     `;
     log.info("automation_created", { automationId, reusedExisting: Boolean(already[0]) });
