@@ -26,6 +26,7 @@ vi.mock("@jqp/core", async (importOriginal) => {
 });
 
 const repo = {
+  deactivateOpenReplyAutomation: vi.fn(),
   getCampaign: vi.fn(),
   getPost: vi.fn(),
   resolveIgUserIdForPost: vi.fn(),
@@ -206,6 +207,49 @@ describe("syncCampaignToOpenReply — opening DM (two-step button reveal)", () =
 
     const insertCall = sqlCalls.find((c) => c.text.includes("insert into"));
     expect(insertCall!.values).not.toContain("stale");
+  });
+});
+
+describe("syncCampaignToOpenReply — off switch", () => {
+  it("switches an existing automation off when the campaign is disabled", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign({ enabled: false, openreply_automation_id: "auto_9" }));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    expect(repo.deactivateOpenReplyAutomation).toHaveBeenCalledWith("auto_9");
+    expect(repo.updateCampaignSync).toHaveBeenCalledWith("campaign_1", { syncStatus: "DM_SYNCED", syncError: null });
+    // and never re-activates it or rewrites its copy
+    expect(sqlCalls.some((c) => c.text.includes("insert into") || c.text.includes("update"))).toBe(false);
+  });
+
+  it("switches it off even if the post lookup would not have allowed a sync", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign({ enabled: false, openreply_automation_id: "auto_9" }));
+    repo.getPost.mockResolvedValue(basePost({ status: "FAILED", instagram_media_id: null }));
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    expect(repo.deactivateOpenReplyAutomation).toHaveBeenCalledWith("auto_9");
+  });
+
+  it("leaves OpenReply alone when a disabled campaign never had an automation", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign({ enabled: false, openreply_automation_id: null }));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    expect(repo.deactivateOpenReplyAutomation).not.toHaveBeenCalled();
+  });
+
+  it("keeps an enabled campaign's automation active", async () => {
+    repo.getCampaign.mockResolvedValue(baseCampaign({ enabled: true, openreply_automation_id: "auto_9" }));
+    repo.getPost.mockResolvedValue(basePost());
+
+    await syncCampaignToOpenReply("campaign_1");
+
+    expect(repo.deactivateOpenReplyAutomation).not.toHaveBeenCalled();
+    const update = sqlCalls.find((c) => c.text.includes('"isActive"'));
+    expect(update!.values).toContain(true);
   });
 });
 

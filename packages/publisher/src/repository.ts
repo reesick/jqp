@@ -263,8 +263,30 @@ export interface UpsertCampaignParams {
   enabled: boolean;
 }
 
-/** Creates or updates the staged campaign for a post (one campaign per post — plan section 21). Does NOT touch OpenReply; that only happens via the sync-campaign-to-openreply job (T12). */
+/**
+ * Switches one OpenReply automation off. OpenReply's worker only answers comments, button taps
+ * and follow-ups for automations with isActive = true, so this is what actually stops the DMs.
+ * Idempotent. It throws if the update fails, because "off" must never be reported when it did
+ * not happen.
+ */
+export async function deactivateOpenReplyAutomation(automationId: string): Promise<void> {
+  const sql = getDb();
+  await sql`update "Automation" set "isActive" = false, "updatedAt" = ${new Date()} where "id" = ${automationId}`;
+}
+
+/**
+ * Creates or updates the staged campaign for a post (one campaign per post — plan section 21).
+ * Turning a campaign OFF is applied to OpenReply here, immediately and before our own row changes,
+ * so it works from every caller (dashboard, REST API, Claude Code tools) and does not depend on a
+ * worker being up. Turning one ON still goes through the sync-campaign-to-openreply job (T12).
+ */
 export async function upsertCampaign(params: UpsertCampaignParams): Promise<CampaignRow> {
+  if (!params.enabled) {
+    const existing = await getCampaignByPostId(params.postId);
+    // If this throws, nothing has changed on our side, the caller sees an error, and the campaign
+    // stays enabled. The reverse order could show "off" while OpenReply kept sending.
+    if (existing?.openreply_automation_id) await deactivateOpenReplyAutomation(existing.openreply_automation_id);
+  }
   const sql = getDb();
   // Opening-DM text fields are normalised to NULL when the toggle is off, not
   // left as empty strings — OpenReply's dm-worker gates the two-step flow on all

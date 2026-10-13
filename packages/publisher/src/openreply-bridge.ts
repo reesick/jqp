@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb, rootLogger, NonRetryableError, RetryableError, type MatchMode } from "@jqp/core";
-import { getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
+import { deactivateOpenReplyAutomation, getCampaign, getPost, resolveIgUserIdForPost, updateCampaignSync } from "./repository.js";
 
 /**
  * Writes directly into OpenReply's own `"Automation"` and
@@ -72,6 +72,16 @@ export async function syncCampaignToOpenReply(campaignId: string): Promise<void>
   const log = rootLogger.child({ campaignId });
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new NonRetryableError(`syncCampaignToOpenReply: no campaign found for id ${campaignId}`, "CAMPAIGN_NOT_FOUND");
+
+  // Off means off: if an automation already exists for this campaign, make sure it is inactive.
+  // Normally upsertCampaign did this already; this covers a sync job queued before the switch-off
+  // and any edit made straight in the database.
+  if (!campaign.enabled && campaign.openreply_automation_id) {
+    await deactivateOpenReplyAutomation(campaign.openreply_automation_id);
+    await updateCampaignSync(campaignId, { syncStatus: "DM_SYNCED", syncError: null });
+    log.info("automation_deactivated", { automationId: campaign.openreply_automation_id });
+    return;
+  }
 
   const post = await getPost(campaign.post_id);
   if (!post) throw new NonRetryableError(`syncCampaignToOpenReply: no post found for campaign ${campaignId}`, "POST_NOT_FOUND");
