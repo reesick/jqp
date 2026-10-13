@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>addaddy.ai | campaign preview</title>
+<style>
+  :root { --bg:#f3f1ea; --card:#fff; --ink:#141414; --muted:#6b6b6b; --line:#dcd9cf; --red:#D9070B; --cream:#FEFAE8; --blue:#0a58ca; --ok:#177a3c; --warn:#a15c00; --bad:#b3140f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 Montserrat, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header.top { position:sticky; top:0; z-index:5; background:var(--ink); color:var(--cream); display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:10px 16px; }
+  header.top img { width:30px; height:30px; border-radius:50%; }
+  header.top b { font-size:15px; }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; margin-left:auto; }
+  .tabs button, .picker button { border:1px solid #444; background:transparent; color:var(--cream); padding:6px 12px; border-radius:6px; cursor:pointer; font:inherit; }
+  .tabs button.on, .picker button.on { background:var(--red); border-color:var(--red); color:#fff; }
+  .picker { display:flex; gap:6px; flex-wrap:wrap; padding:12px 16px 0; }
+  .picker button { color:var(--ink); border-color:var(--line); background:var(--card); }
+  .picker button.on { color:#fff; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  .verdict { display:flex; gap:10px; align-items:center; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-weight:600; }
+  .verdict.ready { background:#e6f4ea; color:var(--ok); } .verdict.warnings { background:#fff3d6; color:var(--warn); } .verdict.blocked { background:#fde4e2; color:var(--bad); }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:3px; max-width:620px; background:var(--card); padding:3px; border-radius:8px; }
+  .grid img { width:100%; aspect-ratio:1; object-fit:cover; display:block; cursor:pointer; }
+  .profile { display:flex; gap:18px; align-items:center; background:var(--card); max-width:620px; padding:16px; border-radius:8px 8px 0 0; margin-top:6px; }
+  .profile img { width:72px; height:72px; border-radius:50%; }
+  .cols { display:grid; grid-template-columns:minmax(0,470px) minmax(0,1fr); gap:20px; align-items:start; }
+  @media (max-width:860px) { .cols { grid-template-columns:minmax(0,1fr); } }
+  .ig { background:var(--card); border:1px solid var(--line); border-radius:8px; overflow:hidden; max-width:470px; }
+  .ig .hd { display:flex; align-items:center; gap:10px; padding:10px 12px; font-weight:600; }
+  .ig .hd img { width:32px; height:32px; border-radius:50%; }
+  .car { position:relative; }
+  .car .track { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; }
+  .car .track::-webkit-scrollbar { display:none; }
+  .car .track img { flex:none; width:100%; aspect-ratio:1; scroll-snap-align:center; object-fit:cover; }
+  .car .arrow { position:absolute; top:50%; transform:translateY(-50%); background:#fffc; border:0; width:28px; height:28px; border-radius:50%; cursor:pointer; font-size:16px; }
+  .car .l { left:8px; } .car .r { right:8px; }
+  .car .count { position:absolute; top:10px; right:10px; background:#000a; color:#fff; font-size:12px; padding:3px 9px; border-radius:12px; }
+  .dots { display:flex; justify-content:center; gap:4px; padding:8px 0 2px; }
+  .dots i { width:6px; height:6px; border-radius:50%; background:#c9c9c9; } .dots i.on { background:var(--blue); }
+  .acts { display:flex; gap:14px; padding:6px 12px; } .acts svg { width:24px; height:24px; }
+  .cap { padding:2px 12px 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .cap .more { color:var(--muted); cursor:pointer; }
+  .tag { color:#00376b; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .card h3 { margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .cmt { display:flex; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); } .cmt:last-child { border:0; }
+  .cmt .u { font-weight:600; } .cmt .hit { background:#e6f4ea; color:var(--ok); border-radius:4px; padding:0 6px; font-size:12px; margin-left:6px; } .cmt .miss { background:#eee; color:var(--muted); border-radius:4px; padding:0 6px; font-size:12px; margin-left:6px; }
+  .phone { background:#fff; border:1px solid var(--line); border-radius:22px; padding:12px; max-width:380px; }
+  .phone .dmhd { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:10px; font-weight:600; }
+  .phone .dmhd img { width:28px; height:28px; border-radius:50%; }
+  .b { max-width:82%; padding:9px 13px; border-radius:18px; background:#efefef; margin:5px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .b.me { margin-left:auto; background:#3797f0; color:#fff; }
+  .btn { display:inline-block; border:1px solid var(--line); border-radius:14px; padding:7px 16px; color:var(--blue); margin:3px 0 6px; font-weight:600; }
+  .lnk { border:1px solid var(--line); border-radius:14px; overflow:hidden; max-width:82%; margin:5px 0; } .lnk img { width:100%; display:block; } .lnk div { padding:8px 12px; background:#f7f7f7; } .lnk small { color:var(--muted); display:block; }
+  .note { font-size:12px; color:var(--muted); margin-top:6px; }
+  .chk { display:flex; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); } .chk:last-child { border:0; }
+  .pill { flex:none; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; height:fit-content; text-transform:uppercase; }
+  .pill.ok { background:#e6f4ea; color:var(--ok); } .pill.warn { background:#fff3d6; color:var(--warn); } .pill.block { background:#fde4e2; color:var(--bad); } .pill.manual { background:#e8eefc; color:var(--blue); }
+  .chk b { display:block; } .chk span { color:var(--muted); }
+  .try { display:flex; gap:8px; margin-bottom:10px; } .try input { flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin-bottom:10px; } .seg button { border:0; background:#fff; padding:6px 12px; cursor:pointer; font:inherit; } .seg button.on { background:var(--ink); color:#fff; }
+  pre { background:#141414; color:#f1eedd; padding:12px; border-radius:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+  .guide h1,.guide h2,.guide h3 { margin:14px 0 6px; } .guide p { margin:6px 0; }
+  table.map { width:100%; border-collapse:collapse; font-size:13px; } table.map td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; } table.map td:first-child { color:var(--muted); width:34%; }
+</style>
+</head>
+<body>
+<header class="top">
+  <img id="logo" alt="">
+  <b>addaddy.ai campaign preview</b>
+  <span id="stamp" style="opacity:.7;font-size:12px"></span>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+<div class="picker" id="picker"></div>
+<main id="main"></main>
+
+<script>
+const DATA = /*__DATA__*/null;
+const TABS = [["feed","Feed"],["post","Post"],["dm","Comment and DM"],["run","How it will run"],["guide","Guide"],["checks","Checks"]];
+let tab = "post", pi = 0, dmMode = "button";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cur = () => DATA.posts[pi];
+const img = (p, f) => p.folder + "/" + f;
+
+function tagify(text) { return esc(text).replace(/(#[\p{L}\p{N}_]+)/gu, '<span class="tag">$1</span>'); }
+function kwHit(comment, kw) { const re = new RegExp("(^|[^\\p{L}\\p{N}_])" + kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^\\p{L}\\p{N}_]|$)", "iu"); return re.test(comment); }
+
+function renderTabs() {
+  $("#tabs").innerHTML = TABS.map(([k, l]) => '<button data-t="' + k + '" class="' + (tab === k ? "on" : "") + '">' + l + "</button>").join("");
+  $("#tabs").querySelectorAll("button").forEach((b) => b.onclick = () => { tab = b.dataset.t; render(); });
+  $("#picker").innerHTML = DATA.posts.map((p, i) => '<button data-i="' + i + '" class="' + (pi === i ? "on" : "") + '">' + (i + 1) + ". " + esc(p.brand) + "  (" + p.checks.counts.block + " blockers, " + p.checks.counts.warn + " warnings)</button>").join("");
+  $("#picker").querySelectorAll("button").forEach((b) => b.onclick = () => { pi = +b.dataset.i; render(); });
+}
+
+function verdictBar(p) {
+  const v = p.checks.verdict, t = { ready: "Ready", warnings: "Ready with warnings", blocked: "Not ready: fix the blockers" }[v];
+  return '<div class="verdict ' + v + '">' + t + ' <span style="font-weight:400">(' + p.checks.counts.block + " blockers, " + p.checks.counts.warn + " warnings, " + p.checks.counts.manual + " to check by hand)</span></div>";
+}
+
+function viewFeed() {
+  return '<div class="profile"><img src="' + DATA.brand.avatar + '"><div><b>addaddy.ai</b><div class="note">' + DATA.posts.length + " posts, in posting order. Click a cover to open it.</div></div></div>" +
+    '<div class="grid">' + DATA.order.map((id) => { const i = DATA.posts.findIndex((p) => p.post_id === id); const p = DATA.posts[i]; return '<img data-i="' + i + '" src="' + img(p, p.slides[0].file) + '" alt="' + esc(p.brand) + '">'; }).join("") + "</div>";
+}
+
+function igPost(p) {
+  const cap = p.caption, short = cap.length > 125;
+  const shown = short ? cap.slice(0, 125).replace(/\s+\S*$/, "") : cap;
+  return '<div class="ig"><div class="hd"><img src="' + DATA.brand.avatar + '"> addaddy.ai</div>' +
+    '<div class="car"><div class="track" id="track">' + p.slides.map((s) => '<img src="' + img(p, s.file) + '" alt="Slide ' + s.order + '">').join("") + '</div>' +
+    '<button class="arrow l" id="prev">&lsaquo;</button><button class="arrow r" id="next">&rsaquo;</button><div class="count" id="cnt">1/' + p.slides.length + '</div></div>' +
+    '<div class="dots" id="dots">' + p.slides.map((_, i) => "<i" + (i === 0 ? ' class="on"' : "") + "></i>").join("") + "</div>" +
+    '<div class="acts"><svg viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2"><path d="M12 21s-7-4.4-9.3-9C1.3 8.9 3 5.5 6.3 5.5c2 0 3.2 1.1 3.7 2 .5-.9 1.7-2 3.7-2 3.300 0 5 3.400 3.600 6.500C19 16.600 12 21 12 21z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.800 7L3 21l2-5.200A8 8 0 1 1 21 12z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="#141414" stroke-width="2"><path d="M22 3L11 14M22 3l-7 18-4-7-7-4z"/></svg></div>' +
+    '<div class="cap" id="cap"><b>addaddy.ai</b> <span id="captxt">' + tagify(shown) + (short ? ' <span class="more" id="more">... more</span>' : "") + "</span></div></div>";
+}
+
+function wireCarousel(p) {
+  const tr = $("#track"); if (!tr) return;
+  const upd = () => { const i = Math.round(tr.scrollLeft / tr.clientWidth); $("#cnt").textContent = (i + 1) + "/" + p.slides.length; $("#dots").querySelectorAll("i").forEach((d, k) => d.className = k === i ? "on" : ""); };
+  tr.onscroll = upd; $("#prev").onclick = () => tr.scrollBy({ left: -tr.clientWidth, behavior: "smooth" }); $("#next").onclick = () => tr.scrollBy({ left: tr.clientWidth, behavior: "smooth" });
+  const more = $("#more"); if (more) more.onclick = () => { $("#captxt").innerHTML = tagify(p.caption); };
+}
+
+function viewPost(p) {
+  const files = p.slides.map((s) => s.order + ". " + s.file + " (" + s.role + ")").join("\n");
+  return verdictBar(p) + '<div class="cols">' + igPost(p) + '<div><div class="card"><h3>Caption as it will be posted</h3><div class="cap" style="padding:0">' + tagify(p.caption) + '</div><div class="note">' + [...p.caption].length + " of 2,200 characters, " + p.hashtags.length + " hashtags, " + p.slides.length + ' slides</div></div><div class="card"><h3>Slide order</h3><pre>' + esc(files) + "</pre></div></div></div>";
+}
+
+function bubble(t, me) { return '<div class="b' + (me ? " me" : "") + '">' + esc(t) + "</div>"; }
+function linkCard(p) { let host = ""; try { host = new URL(p.guide_url).host; } catch {} return '<div class="lnk"><img src="' + img(p, p.brand_assets.guide_cover) + '"><div><b>' + esc(p.guide_title) + "</b><small>" + esc(host) + "</small></div></div>"; }
+
+function viewDm(p) {
+  const kw = p.dm_flow.keyword, s1 = p.dm_flow.steps[0].text, s2 = p.dm_flow.steps[1].text;
+  const comments = [["alex.designs", kw], ["maya_k", "love this, so good"], ["rohit.v", kw.toLowerCase() + " please"], ["dev_88", "need the " + kw.toLowerCase() + "s!!"]];
+  const spec = dmMode === "spec";
+  const thread = bubble(spec ? s1 : p.mapping.openingDm) + (spec ? bubble(s2).replace(/https?:\/\/\S+/, "<u>$&</u>") + linkCard(p) :
+    '<div class="btn">' + esc(p.mapping.buttonLabel) + "</div>" + bubble(p.mapping.buttonLabel, true) + bubble(s2) + linkCard(p));
+  return verdictBar(p) + '<div class="cols"><div><div class="card"><h3>Try a comment</h3><div class="try"><input id="try" placeholder="type a comment, e.g. ' + esc(kw) + '"><span id="tryres" class="note" style="align-self:center"></span></div>' +
+    "<h3>Sample comments</h3>" + comments.map(([u, c]) => '<div class="cmt"><span class="u">' + esc(u) + "</span><span>" + esc(c) + "</span>" + (kwHit(c, kw) ? '<span class="hit">DM sent</span>' : '<span class="miss">ignored</span>') + "</div>").join("") +
+    '<div class="note">Match rule: ' + esc(p.dm_flow.match) + ". Keyword: " + esc(kw) + ".</div></div></div>" +
+    '<div><div class="seg"><button data-m="spec" class="' + (spec ? "on" : "") + '">As written in the spec</button><button data-m="button" class="' + (!spec ? "on" : "") + '">As it will really send</button></div>' +
+    '<div class="phone"><div class="dmhd"><img src="' + DATA.brand.avatar + '"> addaddy.ai</div>' + thread + "</div>" +
+    '<div class="note" style="max-width:380px">' + (spec ? "The spec sends two messages in a row. Meta lets an app send only ONE message in reply to a comment; a second one is allowed only after the person responds. So this version would be rejected for step 2." : "A button is added to message 1. The person taps it, which counts as responding, and only then does message 2 (with the link) go out. Message 1 also says it is automated. This copy needs your OK because it changes message 1.") + "</div></div></div>";
+}
+
+function viewRun(p) {
+  const m = p.mapping, rows = [
+    ["Post", p.post_id + " (" + p.slides.length + " slides, 1080x1080)"], ["Posting order", String(DATA.order.indexOf(p.post_id) + 1) + " of " + DATA.order.length],
+    ["Trigger keyword", m.keywords.join(", ")], ["Match mode", m.matchMode + " (whole word, any case)"],
+    ["Opening DM (message 1)", m.openingDm], ["Button label", m.buttonLabel], ["Link DM (message 2)", m.linkDm], ["Destination link", m.link],
+    ["Public reply under the comment", "Off. One identical reply on every comment looks like spam to Meta."], ["Follow required", "No"], ["Campaign switch", "Created OFF. Nothing answers until you switch it on."]];
+  return verdictBar(p) + '<div class="card"><h3>What gets saved in the system</h3><table class="map">' + rows.map(([a, b]) => "<tr><td>" + a + "</td><td style='white-space:pre-wrap'>" + esc(b) + "</td></tr>").join("") + "</table></div>" +
+    '<div class="card"><h3>Order of events when it goes live</h3><ol><li>You approve this preview, then publish the post.</li><li>Someone comments ' + esc(m.keywords[0]) + ".</li><li>The webhook (or the 5 minute sweep) catches the comment.</li><li>Message 1 goes out as the one allowed reply to that comment, with the button.</li><li>They tap. Message 2 with the link goes out.</li></ol></div>";
+}
+
+function md(text) {
+  const out = []; let code = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("```")) { out.push(code ? "</pre>" : "<pre>"); code = !code; continue; }
+    if (code) { out.push(esc(line)); continue; }
+    if (/^!\[/.test(line)) continue;
+    const h = line.match(/^(#{1,3}) (.*)/); if (h) { out.push("<h" + h[1].length + ">" + esc(h[2]) + "</h" + h[1].length + ">"); continue; }
+    if (line.trim() === "---") { out.push("<hr>"); continue; }
+    if (line.trim()) out.push("<p>" + esc(line).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>") + "</p>");
+  }
+  return out.join("\n");
+}
+function viewGuide(p) { return '<div class="card guide"><div class="note">Public link: ' + esc(p.guide_url) + '. It must open without logging in. Check it in a private window.</div>' + md(p.guide_md) + "</div>"; }
+
+function viewChecks(p) {
+  const groups = {}; p.checks.items.forEach((c) => (groups[c.group] = groups[c.group] || []).push(c));
+  return verdictBar(p) + Object.entries(groups).map(([g, items]) => '<div class="card"><h3>' + esc(g) + "</h3>" + items.map((c) => '<div class="chk"><span class="pill ' + c.level + '">' + c.level + "</span><div><b>" + esc(c.label) + "</b><span>" + esc(c.detail) + "</span></div></div>").join("") + "</div>").join("");
+}
+
+function render() {
+  renderTabs(); const p = cur(); const m = $("#main");
+  m.innerHTML = tab === "feed" ? viewFeed() : tab === "post" ? viewPost(p) : tab === "dm" ? viewDm(p) : tab === "run" ? viewRun(p) : tab === "guide" ? viewGuide(p) : viewChecks(p);
+  if (tab === "feed") m.querySelectorAll(".grid img").forEach((e) => e.onclick = () => { pi = +e.dataset.i; tab = "post"; render(); });
+  if (tab === "post") wireCarousel(p);
+  if (tab === "dm") {
+    m.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { dmMode = b.dataset.m; render(); });
+    const inp = $("#try"); inp.oninput = () => { const v = inp.value; $("#tryres").textContent = !v ? "" : kwHit(v, p.dm_flow.keyword) ? "Triggers the DM" : "No DM"; $("#tryres").style.color = kwHit(v, p.dm_flow.keyword) ? "#177a3c" : "#6b6b6b"; };
+  }
+}
+$("#logo").src = DATA.brand.avatar; $("#stamp").textContent = "built " + DATA.builtAt;
+render();
+</script>
+</body>
+</html>

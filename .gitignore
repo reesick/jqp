@@ -25,3 +25,6 @@ posts/**/*.png
 
 # Local database snapshots (contain personal data and encrypted tokens)
 backups/
+
+# Real post content folders dropped at the repo root (images are large and live in storage once ingested)
+/POST-F/
