@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSystemSnapshot, type ServiceState } from "@jqp/publisher";
+import { ActionButton } from "../../components/action-button";
 import { AlertTriangle, CheckCircle2, XCircle } from "../../components/icons";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,27 @@ export default async function SystemPage() {
           <AlertTriangle size={14} /> {problems.length} of {snap.services.length} {problems.length === 1 ? "check needs" : "checks need"} attention
         </p>
       )}
+
+      <section className="home-section">
+        <h3 className="section-label">Emergency stop</h3>
+        <div className="entity-card">
+          <div className="entity-main">
+            <div className="entity-title">Pause all DMs</div>
+            <div className="entity-meta">
+              <span>Switches every campaign off and stops OpenReply from answering comments. Nothing is deleted. Turn campaigns back on one at a time.</span>
+            </div>
+          </div>
+          <ActionButton
+            href="/api/system/pause"
+            body={{ confirm: true }}
+            label="Pause all DMs"
+            secondary
+            confirmMessage="Switch off every campaign now? No new DMs will be sent until you turn campaigns back on."
+            successMessage="All campaigns paused"
+            failureMessage="Could not pause everything"
+          />
+        </div>
+      </section>
 
       <section className="home-section">
         <h3 className="section-label">Services</h3>
