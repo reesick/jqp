@@ -49,7 +49,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
         </div>
         <div className="page-actions">
           {post.status === "DISCOVERED" ? (
-            <ActionButton href={`/api/posts/${post.id}/publish`} label="Publish" icon={<Rocket size={14} />} />
+            <ActionButton href={`/api/posts/${post.id}/publish`} label="Publish" icon={<Rocket size={14} />} confirmMessage="Publish this post to your connected Instagram account now? It goes live for everyone and cannot be undone from here." />
           ) : null}
           {failed ? <ActionButton href={`/api/posts/${post.id}/retry`} label="Retry" icon={<RotateCw size={14} />} /> : null}
         </div>

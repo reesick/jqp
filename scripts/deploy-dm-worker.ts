@@ -5,9 +5,10 @@
 //   node --import tsx scripts/deploy-dm-worker.ts --host ubuntu@1.2.3.4 --restart        (later: ship a new build)
 //   add --dry-run to print the steps without doing anything
 //
-// Secrets: the env files are copied as files. This script never prints their contents, and the
-// guard file is built from only the ALERT_* mail settings, so the VM guard cannot see database
-// or Instagram keys. Nothing here starts the worker unless you pass --restart (which you only
+// Secrets: the env files are copied as files. This script never prints their contents. The worker
+// file is built from an allowlist (database, Redis, encryption key, Instagram app id and secret,
+// Graph version) and the guard file from only the ALERT_* mail settings, so a stolen VM does not
+// hold the login, cron, email or webhook-signing secrets. Nothing here starts the worker unless you pass --restart (which you only
 // want once `jqp check` on the VM passes).
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -77,12 +78,28 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     checkWorkerEnv(file);
-    scp(dir, [".env"], `${host}:${remoteDir}/worker.env`);
+    // Only what the worker reads goes to the VM. The login secret, cron secret, email key and webhook signing secret
+    // stay on Vercel, so a stolen VM cannot forge dashboard sessions or call cron routes.
+    const all = parse(readFileSync(file));
+    const names = ["DATABASE_URL", "REDIS_URL", "ENCRYPTION_KEY", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "META_GRAPH_API_VERSION"];
+    const lines = names.filter((n) => all[n]).map((n) => `${n}=${all[n]}`);
+    // Links in DMs are built from this, so it must be the public address and never the local one in the env file.
+    lines.push(`NEXTAUTH_URL=${value("openreply-url") ?? "https://jqp-openreply-1.vercel.app"}`);
+    // First start: look back one hour only and take few comments per sweep, so a backlog is never replayed in a burst.
+    lines.push(`COMMENT_POLL_LOOKBACK_HOURS=${value("lookback-hours") ?? "1"}`, "COMMENT_POLL_MAX_PER_SWEEP=5");
+    if (dry) {
+      console.log(`(dry run: the worker env would contain only these names: ${lines.map((l) => l.split("=")[0]).join(", ")})`);
+    } else {
+      const tmp = mkdtempSync(join(tmpdir(), "jqp-worker-"));
+      try {
+        writeFileSync(join(tmp, "worker.env"), lines.join("\n") + "\n", { mode: 0o600 });
+        scp(tmp, ["worker.env"]);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
     // The uploaded copy is removed even if the install step fails.
-    ssh(
-      `(sudo install -m 600 -o root -g root ${remoteDir}/worker.env /etc/jqp/worker.env; rc=$?; rm -f ${remoteDir}/worker.env; exit $rc) && ` +
-        `(sudo grep -q '^COMMENT_POLL_LOOKBACK_HOURS=' /etc/jqp/worker.env || echo 'COMMENT_POLL_LOOKBACK_HOURS=72' | sudo tee -a /etc/jqp/worker.env >/dev/null)`
-    );
+    ssh(`(sudo install -m 600 -o root -g root ${remoteDir}/worker.env /etc/jqp/worker.env; rc=$?; rm -f ${remoteDir}/worker.env; exit $rc)`);
   }
 
   if (flag("push-guard-env")) {

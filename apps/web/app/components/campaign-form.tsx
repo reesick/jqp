@@ -32,7 +32,7 @@ const OPENING_DM_MAX = 640;
 const BUTTON_LABEL_MAX = 20;
 
 const DEFAULT_OPENING_DM =
-  "Hey {username}! 👋 This is an automated reply — tap below and I'll send your link.";
+  "Hey {username}, this is an automated reply. Tap below and I'll send your link.";
 
 // Meta requires automated chat experiences to disclose they're automated at the
 // start of a conversation. The opening DM is that start, so this warns (never
@@ -139,7 +139,7 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
       {openingDmEnabled ? (
         <>
           <p className="muted u-text-sm">
-            They get this message with a tappable button. The DM below — the one with your link — is only sent
+            They get this message with a tappable button. The DM below, the one with your link, is only sent
             after they tap it.
           </p>
           <label>
@@ -164,7 +164,7 @@ export function CampaignForm({ posts, defaultPostId, existing }: Props) {
           <label>
             Button label
             <span className="hint">
-              {openingDmButtonLabel.length}/{BUTTON_LABEL_MAX} — Instagram cuts anything longer.
+              {openingDmButtonLabel.length}/{BUTTON_LABEL_MAX}. Instagram cuts anything longer.
             </span>
             <input
               type="text"

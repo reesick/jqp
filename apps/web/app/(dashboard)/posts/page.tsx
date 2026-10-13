@@ -44,7 +44,7 @@ export default async function PostsPage() {
             </div>
             <StatusBadge status={post.status} />
             {post.status === "DISCOVERED" ? (
-              <ActionButton href={`/api/posts/${post.id}/publish`} label="Publish" icon={<Rocket size={14} />} />
+              <ActionButton href={`/api/posts/${post.id}/publish`} label="Publish" icon={<Rocket size={14} />} confirmMessage="Publish this post to your connected Instagram account now? It goes live for everyone and cannot be undone from here." />
             ) : post.status === "FAILED" || post.status === "VALIDATION_FAILED" ? (
               <ActionButton href={`/api/posts/${post.id}/retry`} label="Retry" icon={<RotateCw size={14} />} secondary />
             ) : null}

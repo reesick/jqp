@@ -71,6 +71,10 @@ async function main(): Promise<void> {
   const existing = await sql<{ workspaceId: string; webhookSubscribed: boolean }[]>`
     select "workspaceId", "webhookSubscribed" from "InstagramAccount" where "instagramId" = ${account.igUserId}`;
   console.log(`Workspace: ${workspaceId}. @${expected} (${account.igUserId}) ${existing.length ? "already has an OpenReply row" : "has no OpenReply row yet"}.`);
+  // Moving an account between workspaces changes who owns its campaigns, so it only happens when asked for.
+  if (existing[0] && existing[0].workspaceId !== workspaceId && !flag("move")) {
+    fail(`@${expected} already belongs to workspace ${existing[0].workspaceId}. Pass --move to move it to ${workspaceId}.`);
+  }
   if (flag("check")) {
     console.log("--check: nothing was changed.");
     return;

@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { template: "%s — jqp", default: "jqp — publisher dashboard" },
+  title: { template: "%s | jqp", default: "jqp | publisher dashboard" },
   description: "Instagram carousel publishing dashboard",
   icons: { icon: "/icon" }
 };

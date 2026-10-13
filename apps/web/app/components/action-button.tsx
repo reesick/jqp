@@ -43,18 +43,29 @@ export function ActionButton({
   // Latest run() for the toast's Retry action (avoids a stale closure).
   const runRef = useRef<() => Promise<void>>(async () => {});
 
-  async function run() {
+  async function run(extra?: Record<string, unknown>) {
     setPending(true);
     setError(null);
     try {
+      const payload = extra ? { ...(body as Record<string, unknown> | undefined), ...extra } : body;
       const res = await fetch(href, {
         method,
-        headers: body ? { "content-type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined
+        headers: payload ? { "content-type": "application/json" } : undefined,
+        body: payload ? JSON.stringify(payload) : undefined
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         const message = json.error ?? `Request failed (${res.status})`;
+        // A failed post that Instagram may already show: ask a person to check the profile, then resend with the confirmation.
+        if (res.status === 409 && href.endsWith("/retry") && !extra && typeof message === "string" && message.includes("confirmNotLive")) {
+          setPending(false);
+          if (window.confirm("Open the Instagram profile and check this post is NOT already there. Retrying while it is live would post it twice. Is it definitely not live?")) {
+            await run({ confirmNotLive: true });
+          } else {
+            setError("Not retried. Check the Instagram profile first; if the post is not there, press Retry again and confirm.");
+          }
+          return;
+        }
         setError(message);
         toast(failureMessage ?? copy.failed, { kind: "error", action: { label: "Retry", onClick: () => void runRef.current() } });
         return;

@@ -114,6 +114,14 @@ export async function getSystemSnapshot(): Promise<SystemSnapshot> {
     detail: !dbOk ? "Cannot reach Postgres" : dbMs > 1500 ? `Slow: ${dbMs}ms for a trivial query` : `Responding in ${dbMs}ms`,
     latencyMs: dbMs
   });
+  // The dashboard is on a public URL and its login limiter is per serverless instance, so the secret itself is the defence.
+  const secretLength = (process.env.DASHBOARD_SHARED_SECRET ?? "").length;
+  services.push({
+    key: "dashboard-password",
+    label: "Dashboard password",
+    state: secretLength >= 32 ? "ok" : "warn",
+    detail: secretLength >= 32 ? "Long enough" : `Only ${secretLength} characters. Set DASHBOARD_SHARED_SECRET to 32 or more random characters`
+  });
 
   if (!dbOk) {
     return {

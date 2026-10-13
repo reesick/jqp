@@ -36,7 +36,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </strong>
           {tokenHealth.expiring.map((a) => (
             <div key={a.instagramId}>
-              @{a.username} —{" "}
+              @{a.username}:{" "}
               {a.daysLeft === null
                 ? "expiry unknown"
                 : a.daysLeft < 0
@@ -62,7 +62,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           accounts.map((a) => (
             <div className="entity-card" key={a.id}>
               <div className="entity-main">
-                <div className="entity-title">@{a.username ?? "—"}</div>
+                <div className="entity-title">@{a.username ?? "unknown"}</div>
                 <div className="entity-meta">
                   <span className="mono">{a.ig_user_id}</span>
                   <span>
