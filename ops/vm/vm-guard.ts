@@ -145,9 +145,10 @@ async function main(): Promise<void> {
   const restartDelta = restartCount === null || state.restarts.lastCount === null ? 0 : Math.max(0, restartCount - state.restarts.lastCount);
   const dfOut = run("df", ["-P", "/"]);
   const serviceState = run("systemctl", ["is-active", SERVICE]) || "unknown";
+  const serviceEnabled = run("systemctl", ["is-enabled", SERVICE]) || "unknown";
 
   const readings: Reading[] = [
-    gradeService(serviceState, restartDelta, t),
+    gradeService(serviceState, restartDelta, t, serviceEnabled),
     gradeDisk(parseDfPercent(dfOut), t),
     gradeMemory(parseMeminfo(readText("/proc/meminfo")), t),
     gradeTransfer(transfer.bytes, t)

@@ -4,8 +4,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=jqp
-Group=jqp
+# A different user from the worker, so neither can read the other's environment (the guard holds the mail
+# password, the worker holds the database and Instagram secrets).
+User=jqp-guard
+Group=jqp-guard
 EnvironmentFile=/etc/jqp/guard.env
 StateDirectory=jqp-guard
 ExecStart=/usr/bin/node /opt/jqp/bin/vm-guard.mjs
@@ -14,3 +16,17 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0077

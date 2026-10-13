@@ -27,8 +27,24 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectKernelTunables=true
+ProtectKernelModules=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# Other users' processes (including the guard, which holds the mail password) are invisible to the worker.
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+UMask=0077
+# The worker has no business talking to the cloud metadata service.
+IPAddressDeny=169.254.169.254
 
 [Install]
 WantedBy=multi-user.target

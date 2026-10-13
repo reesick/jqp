@@ -33,6 +33,8 @@ fi
 
 echo "==> Service user and folders"
 id jqp >/dev/null 2>&1 || useradd --system --home-dir /opt/jqp --shell /usr/sbin/nologin jqp
+# The guard runs as its own user so it and the worker cannot read each other's secrets.
+id jqp-guard >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin jqp-guard
 install -d -m 755 -o root -g root /opt/jqp /opt/jqp/bin
 install -d -m 750 -o root -g jqp /etc/jqp
 for f in worker.env guard.env; do [ -f "/etc/jqp/$f" ] || install -m 600 -o root -g root /dev/null "/etc/jqp/$f"; done
@@ -44,7 +46,8 @@ if [ -f /opt/jqp/bin/dm-worker.mjs ] && ! cmp -s "$HERE/dm-worker.mjs" /opt/jqp/
 fi
 install -m 644 "$HERE/dm-worker.mjs" "$HERE/selfcheck.mjs" "$HERE/vm-guard.mjs" /opt/jqp/bin/
 # The folder must exist before the first guard run so the stop-file watcher has something to watch.
-install -d -m 755 -o jqp -g jqp /var/lib/jqp-guard
+install -d -m 755 -o jqp-guard -g jqp-guard /var/lib/jqp-guard
+chown -R jqp-guard:jqp-guard /var/lib/jqp-guard
 [ -f "$HERE/VERSION" ] && install -m 644 "$HERE/VERSION" /opt/jqp/VERSION
 install -m 755 "$HERE/jqp-ctl.sh" /usr/local/bin/jqp
 install -m 644 "$HERE/jqp-dm-worker.service" "$HERE/jqp-vm-guard.service" "$HERE/jqp-vm-guard.timer" "$HERE/jqp-halt.path" "$HERE/jqp-halt.service" /etc/systemd/system/
@@ -54,12 +57,17 @@ install -d /etc/systemd/journald.conf.d
 printf '[Journal]\nStorage=persistent\nSystemMaxUse=100M\n' > /etc/systemd/journald.conf.d/jqp.conf
 systemctl restart systemd-journald
 
+echo "==> SSH: keys only"
+# Named 00- so it wins over cloud-init's drop-in (sshd uses the first value it sees). Checked before reload so a
+# mistake cannot lock you out; key logins keep working either way.
+{ echo "PasswordAuthentication no"; echo "KbdInteractiveAuthentication no"; } > /etc/ssh/sshd_config.d/00-jqp.conf
+if sshd -t 2>/dev/null; then systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true; else rm -f /etc/ssh/sshd_config.d/00-jqp.conf; fi
+
 echo "==> Services"
 systemctl daemon-reload
-# The worker is enabled (starts at boot) only by `jqp start`, never by an install. If it is not
-# running, make sure an earlier install did not leave it enabled.
-systemctl is-active --quiet jqp-dm-worker || systemctl disable jqp-dm-worker >/dev/null 2>&1 || true
-systemctl enable --now jqp-vm-guard.timer jqp-halt.path >/dev/null 2>&1
+# The worker is enabled (starts at boot) only by `jqp start`, never by an install, and an install never
+# changes whether it is enabled or running.
+systemctl enable --now jqp-vm-guard.timer jqp-halt.path >/dev/null
 
 echo
 echo "Installed. Not started: jqp-dm-worker (so no DMs go out yet)."

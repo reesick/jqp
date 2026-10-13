@@ -79,6 +79,14 @@ describe("grading", () => {
     expect(gradeTransfer(30e9, T).level).toBe("crit");
     expect(gradeTransfer(1e8, T).level).toBe("ok");
   });
+  it("does not alarm on the restart window, or on a worker that is not enabled", () => {
+    expect(gradeService("activating", 0, T, "enabled").level).toBe("ok");
+    expect(gradeService("inactive", 0, T, "disabled").level).toBe("ok");
+    expect(gradeService("inactive", 0, T, "disabled").detail).toContain("not enabled");
+    // enabled but not running means it died or was halted
+    expect(gradeService("inactive", 0, T, "enabled").level).toBe("crit");
+    expect(gradeService("failed", 0, T, "enabled").level).toBe("crit");
+  });
   it("flags a stopped or crash-looping service", () => {
     expect(gradeService("inactive", 0, T).level).toBe("crit");
     expect(gradeService("active", 0, T).level).toBe("ok");

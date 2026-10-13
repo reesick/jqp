@@ -204,8 +204,22 @@ export function gradeTransfer(bytes: number, t: Thresholds): Reading {
   };
 }
 
-export function gradeService(active: string, restartDelta: number, t: Thresholds): Reading {
+/**
+ * `active` is systemd's answer to is-active and `enabled` is its answer to is-enabled.
+ *  - "activating" is the 10 second restart window after a crash. Not an alarm by itself: a crash loop shows up
+ *    through the restart count below.
+ *  - A worker that is not enabled was stopped on purpose (jqp stop) or has not been started yet. That is a fact
+ *    to report, not an emergency to email about every six hours.
+ *  - A worker that is enabled but not running died, or was stopped by the guard's halt. That is critical.
+ */
+export function gradeService(active: string, restartDelta: number, t: Thresholds, enabled?: string): Reading {
+  if (active === "activating") {
+    return { id: "service", label: "DM worker service", level: "ok", detail: "restarting" };
+  }
   if (active !== "active") {
+    if (enabled === "disabled") {
+      return { id: "service", label: "DM worker service", level: "ok", detail: "not running: it is not enabled (stopped on purpose or not started yet). DMs are not being sent" };
+    }
     return { id: "service", label: "DM worker service", level: "crit", detail: `service is "${active}", not running` };
   }
   const level = levelHigh(restartDelta, t.restartsWarn, t.restartsCrit);
@@ -272,7 +286,7 @@ const ADVICE: Record<string, string> = {
   transfer: "Far more outbound data than a DM worker should send. Check `sudo journalctl -u jqp-dm-worker --since today`, then consider stopping the service and rotating secrets.",
   service: "Run `sudo systemctl status jqp-dm-worker` and `sudo journalctl -u jqp-dm-worker -n 80`. A crash loop is usually a wrong DATABASE_URL or REDIS_URL.",
   reboot: "The VM restarted (Oracle maintenance or a crash). The worker comes back on its own; confirm with `npm run smoke`.",
-  halt: "The worker was stopped automatically and stays stopped, even after a reboot. Queued DMs are safe in Redis. Fix the cause, then run `jqp resume`. Resume within 7 days so Meta still accepts the replies.",
+  halt: "The worker was stopped automatically and stays stopped, even after a reboot. Queued DMs are safe in Redis. Fix the cause, then run `jqp resume`. Resume within 72 hours: comments the webhook already queued are kept longer, but the catch-up sweep only reaches back 72 hours.",
   mail: "Test mail path on the VM: sudo -u jqp node /opt/jqp/bin/vm-guard.mjs --test-email"
 };
 
