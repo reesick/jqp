@@ -36,7 +36,7 @@ Events older than `SYSTEM_EVENT_RETENTION_DAYS` (default 90) are deleted by the 
 
 `POST /api/cron/monitor` runs all checks and sends one email when a check **starts** failing, one when it **recovers**, and a reminder every 6 hours while it stays broken. It does not email on every run.
 
-It needs a scheduler. The repository includes `.github/workflows/monitor.yml` (every 10 minutes, plus a daily retention purge at 04:30 UTC). Setup is in `docs/MORNING-CHECKLIST.md`, step 6.
+It needs a scheduler. The repository includes `.github/workflows/monitor.yml` (every 30 minutes, plus a daily retention purge at 04:30 UTC; 10 minutes would use about 4,300 of the 2,000 free private-repo minutes a month). Setup is in `docs/MORNING-CHECKLIST.md`, step 6.
 
 | Variable | Where | Purpose |
 |---|---|---|

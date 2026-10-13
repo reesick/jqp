@@ -40,7 +40,9 @@
     "set-env": "tsx scripts/set-env.ts",
     "test-email": "tsx scripts/test-email.ts",
     "backup": "tsx scripts/backup-db.ts",
-    "rotate-db-password": "tsx scripts/rotate-db-password.ts"
+    "rotate-db-password": "tsx scripts/rotate-db-password.ts",
+    "bundle-dm-worker": "tsx scripts/bundle-dm-worker.ts",
+    "deploy-dm-worker": "tsx scripts/deploy-dm-worker.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

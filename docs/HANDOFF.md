@@ -34,7 +34,7 @@ Instagram carousel publishing plus comment-to-DM automation, official Meta APIs 
 
 **Monitoring and ops**: System page, privacy-scrubbed `system_events` log, state-change alert emails, daily cloud retention purge endpoint, `.github/workflows/monitor.yml` (inert until configured), Meta rate-limit handling (80002 retryable, wait hints honoured, 4 hour retry schedule, usage warnings).
 
-**Tooling (`npm run ...`)**: `doctor` (inside check), `smoke` (live site), `backup` (local snapshot), `check-redis`, `set-env`, `set-redis`, `set-database-url`, `rotate-db-password`, `test-email`, `dm-worker`, `mcp:selftest`.
+**Tooling (`npm run ...`)**: `doctor` (inside check), `smoke` (live site), `backup` (local snapshot), `check-redis`, `set-env`, `set-redis`, `set-database-url`, `rotate-db-password`, `test-email`, `dm-worker`, `mcp:selftest`, `bundle-dm-worker` (builds `dist/dm-host`), `deploy-dm-worker` (ships it to a VM over ssh).
 
 **Claude Code integration**: `apps/mcp` (tools: system_health, list_posts, get_post, list_campaigns, recent_problems, preview_dm, ingest_post_folder, configure_campaign, publish_post, retry_post). Live actions need `confirm: true`. Currently **disabled** in the owner's Claude settings; they must approve it.
 
@@ -44,7 +44,7 @@ Instagram carousel publishing plus comment-to-DM automation, official Meta APIs 
 
 ## 4. Open work, in priority order (full scoring in `docs/REMEDIATION-PLAN.md`)
 **A. Owner actions**
-1. Get the DM worker running 24/7: follow `docs/GCP-WORKER.md` (free Google Cloud e2-micro, region us-west1, upload the OpenReply `.env` with the SSH window's upload button). Until then run `npm run dm-worker` in their own terminal.
+1. Get the DM worker running 24/7. Current plan (2026-10-13): the owner now has an Oracle Cloud account; follow `docs/ORACLE-WORKER.md` (AMD micro VM, `npm run deploy-dm-worker`, VM guard emails on disk, memory, outbound data, worker down, reboot). Read its section 1 first: Oracle can reclaim idle free VMs, so keep the GCP worker (`docs/GCP-WORKER.md`) as a backup. Until a host exists run `npm run dm-worker` in the owner's own terminal. Built and tested here: the bundle (6 MB, works against the live database and Redis via `selfcheck`), the guard logic (20 unit tests) and a test email. **Not tested on a real Linux/Oracle machine** (no WSL or Docker on the laptop): `install.sh`, the systemd units and `jqp-ctl.sh` have only had a syntax check, so the first real run may need small fixes.
 2. Rotate the remaining secrets that appeared in chat: **Redis password** (then `npm run set-redis -- --vercel`), **Brevo SMTP key** (then `npm run set-env`), and **delete the Supabase access token** used for the rotation. The database password is already rotated.
 3. GitHub: secret `MONITOR_TOKEN` (copy with `npm run set-env -- --clipboard MONITOR_TOKEN`) and variable `MONITOR_URL=https://jqp-web-tau.vercel.app`, then run the workflow once.
 4. Set a dedicated `CRON_SECRET` on `jqp-openreply-1`; make the dashboard password 32+ characters.
