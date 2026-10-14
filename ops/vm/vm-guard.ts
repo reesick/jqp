@@ -21,7 +21,6 @@ import {
   type Thresholds,
   accumulateTransfer,
   bodyFor,
-  buildVmReport,
   decide,
   emptyState,
   normalizeState,
@@ -35,6 +34,7 @@ import {
   reportDue,
   subjectFor
 } from "./guard-core";
+import { buildVmReport, type SystemSection } from "./vm-report";
 
 const SERVICE = process.env.GUARD_SERVICE ?? "jqp-dm-worker";
 const STATE_DIR = process.env.GUARD_STATE_DIR ?? "/var/lib/jqp-guard";
@@ -128,6 +128,22 @@ async function sendMail(subject: string, text: string, html?: string): Promise<b
   }
 }
 
+// The system half of the combined email comes from the dashboard. Any failure becomes a visible note in the email,
+// never a silent gap, and never stops the VM half from being sent.
+async function fetchSystemSection(): Promise<{ system: SystemSection | null; error: string | null }> {
+  const base = (process.env.DASHBOARD_URL ?? "").replace(/\/$/, "");
+  const token = process.env.VM_REPORT_TOKEN ?? "";
+  if (!base || !token) return { system: null, error: "DASHBOARD_URL or VM_REPORT_TOKEN is not set on the VM (run deploy-dm-worker with --push-guard-env)." };
+  try {
+    const res = await fetch(`${base}/api/cron/digest-data`, { method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) });
+    const body = (await res.json().catch(() => null)) as { success?: boolean; data?: SystemSection; error?: string } | null;
+    if (!res.ok || !body?.success || !body.data) return { system: null, error: `The dashboard answered ${res.status}${body?.error ? `: ${body.error}` : ""}.` };
+    return { system: body.data, error: null };
+  } catch (error) {
+    return { system: null, error: `Could not reach the dashboard (${error instanceof Error ? error.message : "unknown error"}).` };
+  }
+}
+
 async function main(): Promise<void> {
   const host = os.hostname();
   const now = Date.now();
@@ -159,8 +175,10 @@ async function main(): Promise<void> {
 
   const mem = parseMeminfo(readText("/proc/meminfo"));
   const haltedText = existsSync(HALT_FILE) ? readText(HALT_FILE).trim() || "stop file present" : null;
-  const makeReport = () =>
+  const makeReport = (sys: { system: SystemSection | null; error: string | null }) =>
     buildVmReport({
+      system: sys.system,
+      systemError: sys.error,
       host,
       now,
       readings,
@@ -179,7 +197,7 @@ async function main(): Promise<void> {
     });
 
   if (args.has("--dry-run")) {
-    if (args.has("--report")) console.log(makeReport().text);
+    if (args.has("--report")) console.log(makeReport(await fetchSystemSection()).text);
     for (const r of readings) console.log(`${r.level.padEnd(4)} ${r.label}: ${r.detail}`);
     console.log(`state dir: ${existsSync(STATE_DIR) ? STATE_DIR : `${STATE_DIR} (not created yet)`}`);
     if (existsSync(HALT_FILE)) console.log(`HALTED: ${readText(HALT_FILE).trim()}. Run \`jqp resume\` once the cause is fixed.`);
@@ -188,7 +206,7 @@ async function main(): Promise<void> {
 
   // --report: send the status email now, then stop (no alert logic, no force stop).
   if (args.has("--report")) {
-    const r = makeReport();
+    const r = makeReport(await fetchSystemSection());
     const ok = await sendMail(r.subject, r.text, r.html);
     if (ok) saveState({ ...state, transfer, lastReportAt: now });
     console.log(ok ? "status report sent" : "status report FAILED");
@@ -257,7 +275,7 @@ async function main(): Promise<void> {
 
   // The scheduled status report, sent even when nothing is wrong. A failed send is retried in 10 minutes.
   if (reportDue(state.lastReportAt, now)) {
-    const r = makeReport();
+    const r = makeReport(await fetchSystemSection());
     const reportSent = await sendMail(r.subject, r.text, r.html);
     next.lastReportAt = reportSent ? now : now - REPORT_INTERVAL_MS + 10 * 60_000;
   }

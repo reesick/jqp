@@ -105,7 +105,10 @@ async function main(): Promise<void> {
   if (flag("push-guard-env")) {
     const rootEnv = join(root, ".env");
     const all = parse(readFileSync(rootEnv));
-    const names = ["ALERT_EMAIL_TO", "ALERT_EMAIL_FROM", "ALERT_SMTP_HOST", "ALERT_SMTP_PORT", "ALERT_SMTP_USER", "ALERT_SMTP_PASS"];
+    // The combined status email needs the dashboard address and its report token. They may come from the shell
+    // (so the token never has to live in the root env file) or from the root env file.
+    for (const n of ["DASHBOARD_URL", "VM_REPORT_TOKEN"]) if (process.env[n]) all[n] = process.env[n]!;
+    const names = ["ALERT_EMAIL_TO", "ALERT_EMAIL_FROM", "ALERT_SMTP_HOST", "ALERT_SMTP_PORT", "ALERT_SMTP_USER", "ALERT_SMTP_PASS", "DASHBOARD_URL", "VM_REPORT_TOKEN"];
     const missing = ["ALERT_EMAIL_TO", "ALERT_EMAIL_FROM", "ALERT_SMTP_HOST", "ALERT_SMTP_USER", "ALERT_SMTP_PASS"].filter((n) => !all[n]);
     if (missing.length) {
       console.error(`Cannot build the guard mail settings, missing in the root env file: ${missing.join(", ")}`);

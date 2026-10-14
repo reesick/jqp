@@ -3,7 +3,6 @@ import {
   DEFAULT_THRESHOLDS as T,
   accumulateTransfer,
   bodyFor,
-  buildVmReport,
   decide,
   emptyState,
   normalizeState,
@@ -20,6 +19,7 @@ import {
   subjectFor,
   type Reading
 } from "./guard-core";
+import { buildVmReport } from "./vm-report";
 
 const MEMINFO = `MemTotal:         969000 kB
 MemFree:          100000 kB
@@ -233,6 +233,7 @@ describe("vm status report", () => {
     load1: 0.04,
     cpus: 1
   };
+  const system = { level: "ok" as const, headline: "ok", passing: 5, total: 5, lines: ["5 of 5 checks passing"], rowsHtml: "<tr><td>rows</td></tr>", dashboardUrl: "https://x.example", generatedAt: "2026-10-14T06:00:00Z" };
   const readings = (level: "ok" | "warn" | "crit") => [{ id: "disk", label: "Disk", level, detail: "x" }];
 
   it("is due on first run, after six hours, and if the clock went backwards", () => {
@@ -243,25 +244,32 @@ describe("vm status report", () => {
   });
 
   it("reports a healthy running worker with the limits shown", () => {
-    const r = buildVmReport({ ...base, readings: readings("ok") });
-    expect(r.subject).toBe("[VM OK] jqp-dm-worker: worker running, disk 11%");
-    expect(r.html).toContain("VM healthy");
+    const r = buildVmReport({ ...base, system, readings: readings("ok") });
+    expect(r.subject).toBe("[ALL OK] addaddy.ai: system 5/5, VM worker running, disk 11%");
+    expect(r.html).toContain("Everything healthy");
     expect(r.html).toContain("force stop 95%");
     expect(r.html).toContain("2.30 GB of 10 TB free");
     expect(r.text).toContain("DM worker running");
   });
 
   it("calls out a force stop as needing attention", () => {
-    const r = buildVmReport({ ...base, readings: readings("ok"), serviceActive: "inactive", halted: "2026-10-14T05:00:00Z disk" });
+    const r = buildVmReport({ ...base, system, readings: readings("ok"), serviceActive: "inactive", halted: "2026-10-14T05:00:00Z disk" });
     expect(r.subject).toContain("ATTENTION");
-    expect(r.html).toContain("VM needs attention");
+    expect(r.html).toContain("Needs attention");
     expect(r.html).toContain("STOPPED by the force stop");
   });
 
   it("treats a worker that was stopped on purpose as a fact, not an alarm", () => {
-    const r = buildVmReport({ ...base, readings: readings("ok"), serviceActive: "inactive", serviceEnabled: "disabled" });
-    expect(r.subject.startsWith("[VM OK]")).toBe(true);
+    const r = buildVmReport({ ...base, system, readings: readings("ok"), serviceActive: "inactive", serviceEnabled: "disabled" });
+    expect(r.subject.startsWith("[ALL OK]")).toBe(true);
     expect(r.text).toContain("stopped on purpose or not started yet");
+  });
+
+  it("never reads as all fine when the system section is missing", () => {
+    const r = buildVmReport({ ...base, system: null, systemError: "The dashboard answered 401.", readings: readings("ok") });
+    expect(r.subject.startsWith("[WARNINGS]")).toBe(true);
+    expect(r.text).toContain("System report unavailable: The dashboard answered 401.");
+    expect(r.html).toContain("System report unavailable.");
   });
 
   it("escapes the host name in the html", () => {
