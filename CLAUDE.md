@@ -1,6 +1,6 @@
 # jqp
 
-**Taking over? Read `docs/HANDOFF.md` first.** It summarises the whole project history, current state, open work and rules, and points to every other document (`docs/INDEX.md`).
+**Taking over? Read `docs/context/00-START-HERE-OVERVIEW-AND-DECISIONS.md` first** (current state, every decision, open work; written 2026-10-21), then the other six files in `docs/context/` (architecture, database and Redis, dashboard and API, external integrations, production and the VM, access map). `docs/HANDOFF.md` is the older history. It summarises the whole project history, current state, open work and rules, and points to every other document (`docs/INDEX.md`).
 
 Instagram carousel publishing plus comment-to-DM automation, official Meta APIs only. Read `README.md` for architecture and `docs/MORNING-CHECKLIST.md` for current state.
 

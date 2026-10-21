@@ -125,9 +125,12 @@ async function main(): Promise<void> {
         rmSync(tmp, { recursive: true, force: true });
       }
     }
-    // Keep any GUARD_* threshold lines already set on the VM; only the mail settings are replaced.
+    // Keep any GUARD_* threshold lines already set on the VM; only the mail settings are replaced. The dashboard
+    // address and report token are kept too unless new values were supplied, so a plain re-run cannot silently
+    // drop them and leave the status email without its system half.
+    const keep = ["GUARD_", ...["DASHBOARD_URL", "VM_REPORT_TOKEN"].filter((n) => !all[n]).map((n) => `${n}=`)].join("|");
     ssh(
-      `sudo sh -c "grep '^GUARD_' /etc/jqp/guard.env >> ${remoteDir}/guard.env 2>/dev/null; true" && ` +
+      `sudo sh -c "grep -E '^(${keep})' /etc/jqp/guard.env >> ${remoteDir}/guard.env 2>/dev/null; true" && ` +
         `(sudo install -m 600 -o root -g root ${remoteDir}/guard.env /etc/jqp/guard.env; rc=$?; rm -f ${remoteDir}/guard.env; exit $rc)`
     );
   }

@@ -1,5 +1,7 @@
 # Handoff: everything from the long working session (2026-09-30 to 2026-10-03)
 
+**Newer and more complete: `docs/context/` (start with `00-START-HERE-OVERVIEW-AND-DECISIONS.md`, written 2026-10-21). Where it disagrees with this file, it wins; this file stops at 2026-10-14.**
+
 For a fresh Claude session (or a person) taking over. Read this, then `docs/ARCHITECTURE.md`, then `docs/REMEDIATION-PLAN.md`. Nothing secret is written here; secrets live in the root `.env`, `vendor/openreply/.env`, Vercel and the private backup folder.
 
 ## UPDATE 2026-10-13 (read this first; where it disagrees with the sections below, this wins)
