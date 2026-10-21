@@ -215,6 +215,8 @@ or use the Ingest form on the Posts page of a **locally running** dashboard.
 
 ### 5.2 Publish
 
+Before clicking **Publish**, follow [`docs/PUBLISHING.md`](docs/PUBLISHING.md). It explains how to start the local publisher and warns that it will process jobs already waiting in Supabase.
+
 1. Start the local worker: `npm run dev:worker` (or `npm run build:worker` then `npm run start --workspace apps/worker`).
 2. In the dashboard (local or https://jqp-web-tau.vercel.app), open Posts and press **Publish** on a `DISCOVERED` post. The web app only enqueues the job; your local worker does the work.
 3. Status walks `VALIDATING, UPLOADING, CREATING_CHILDREN, WAITING_FOR_CHILDREN, CREATING_CAROUSEL, WAITING_FOR_CAROUSEL, PUBLISHING, PUBLISHED` (see the post detail page). If the worker is killed mid-run it resumes from the last saved status.

@@ -14,6 +14,7 @@
 |---|---|
 | `MORNING-CHECKLIST.md` | Current state and what only you can do |
 | `MONITORING.md` | System page, alerts, the scheduled monitor |
+| `PUBLISHING.md` | Start the local publisher before using Publish in the dashboard |
 | `RECOVERY.md` | Backups and restore |
 | `RATE-LIMITS.md` | Meta's limits and how the code behaves when throttled |
 | `COMPLIANCE-AUDIT-3.md` | **Meta rules with sources, gaps, and the Advanced Access finding (2026-10-13)** |
